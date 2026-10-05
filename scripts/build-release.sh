@@ -37,11 +37,11 @@ for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 
   IFS=/ read -r target_os target_arch <<< "$platform"
   suffix=''
   if [ "$target_os" = windows ]; then suffix='.exe'; fi
-  asset="iflint-$target_os-$target_arch$suffix"
+  asset="ifttt-$target_os-$target_arch$suffix"
   assets+=("$asset")
   (cd "$ROOT" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" go build -trimpath \
     -ldflags "-X main.version=$release_version -X main.commit=$release_commit" \
-    -o "$stage/$asset" ./cmd)
+    -o "$stage/$asset" ./cmd/ifttt)
 done
 (cd "$stage" && if command -v sha256sum >/dev/null; then
   sha256sum "${assets[@]}" > SHA256SUMS

@@ -14,22 +14,22 @@ PLATFORMS = (
     ('darwin', 'amd64'), ('darwin', 'arm64'),
     ('windows', 'amd64'), ('windows', 'arm64'),
 )
-ASSETS = [f'iflint-{os_name}-{arch}' + ('.exe' if os_name == 'windows' else '')
+ASSETS = [f'ifttt-{os_name}-{arch}' + ('.exe' if os_name == 'windows' else '')
           for os_name, arch in PLATFORMS]
 
 
 class ReleaseBuildTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='iflint-release-test-')
+        self.temp = tempfile.TemporaryDirectory(prefix='ifttt-release-test-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / 'scripts').mkdir()
         shutil.copy2(SCRIPT, self.root / 'scripts/build-release.sh')
         (self.root / 'build').mkdir()
         self.legacy = {
-            'iflint': b'user native executable',
-            'iflint-linux-amd64': b'historical release',
-            'iflint-obsolete-platform': b'historical obsolete release',
+            'ifttt': b'user native executable',
+            'ifttt-linux-amd64': b'historical release',
+            'ifttt-obsolete-platform': b'historical obsolete release',
             'SHA256SUMS': b'historical checksums',
         }
         for name, data in self.legacy.items():

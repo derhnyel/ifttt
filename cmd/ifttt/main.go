@@ -112,47 +112,47 @@ func main() {
 		switch os.Args[1] {
 		case "jump":
 			if err := runJump(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "iflint:", err)
+				fmt.Fprintln(os.Stderr, "ifttt:", err)
 				os.Exit(1)
 			}
 			return
 		case "watch":
 			if err := runWatch(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "iflint watch:", err)
+				fmt.Fprintln(os.Stderr, "ifttt watch:", err)
 				os.Exit(1)
 			}
 			return
 		case "review":
 			if err := runReview(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "iflint review:", err)
+				fmt.Fprintln(os.Stderr, "ifttt review:", err)
 				os.Exit(1)
 			}
 			return
 		case "blame":
 			if err := runBlame(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "iflint blame:", err)
+				fmt.Fprintln(os.Stderr, "ifttt blame:", err)
 				os.Exit(1)
 			}
 			return
 		case "scaffold":
 			if err := runScaffold(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "iflint scaffold:", err)
+				fmt.Fprintln(os.Stderr, "ifttt scaffold:", err)
 				os.Exit(1)
 			}
 			return
 		case "ignore":
 			if len(os.Args) > 2 && os.Args[2] == "add" {
 				if err := runIgnoreAdd(os.Args[3:]); err != nil {
-					fmt.Fprintln(os.Stderr, "iflint ignore add:", err)
+					fmt.Fprintln(os.Stderr, "ifttt ignore add:", err)
 					os.Exit(1)
 				}
 				return
 			}
-			fmt.Fprintln(os.Stderr, "iflint ignore: expected 'add' subcommand")
+			fmt.Fprintln(os.Stderr, "ifttt ignore: expected 'add' subcommand")
 			os.Exit(1)
 		case "explain":
 			if err := runExplainCommand(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "iflint explain:", err)
+				fmt.Fprintln(os.Stderr, "ifttt explain:", err)
 				os.Exit(1)
 			}
 			return
@@ -201,7 +201,7 @@ func main() {
 		fatalInput(err)
 	}
 	if *showVersion {
-		fmt.Printf("iflint %s (commit %s)\n", version, commit)
+		fmt.Printf("ifttt %s (commit %s)\n", version, commit)
 		return
 	}
 	explicitFlags := map[string]bool{}
@@ -209,7 +209,7 @@ func main() {
 
 	cfg, cfgErr := config.Load(".")
 	if cfgErr != nil && !errors.Is(cfgErr, fs.ErrNotExist) {
-		fmt.Fprintln(os.Stderr, "iflint:", cfgErr)
+		fmt.Fprintln(os.Stderr, "ifttt:", cfgErr)
 		os.Exit(2)
 	}
 
@@ -244,7 +244,7 @@ func main() {
 	}
 	if len(cStyles) > 0 {
 		if err := applyCommentStyleOverrides(cStyles); err != nil {
-			fmt.Fprintln(os.Stderr, "iflint:", err)
+			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
 		}
 	}
@@ -265,7 +265,7 @@ func main() {
 	comments.SetPythonDocstrings(cfg.PythonDocstringsEnabled())
 	factories, err := buildFactories(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "iflint:", err)
+		fmt.Fprintln(os.Stderr, "ifttt:", err)
 		os.Exit(2)
 	}
 
@@ -285,7 +285,7 @@ func main() {
 
 	if *explain != "" {
 		if err := explainRule(*explain); err != nil {
-			fmt.Fprintln(os.Stderr, "iflint:", err)
+			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
 		}
 		os.Exit(0)
@@ -315,24 +315,24 @@ func main() {
 		}
 		findings, err := runDoctor(root, cfg.SkipDirs, *fix)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "iflint doctor:", err)
+			fmt.Fprintln(os.Stderr, "ifttt doctor:", err)
 			os.Exit(2)
 		}
 		if err := rw.Write(findings, nil); err != nil {
-			fmt.Fprintln(os.Stderr, "iflint doctor:", err)
+			fmt.Fprintln(os.Stderr, "ifttt doctor:", err)
 			os.Exit(2)
 		}
 		if len(findings) == 0 || *warn {
 			os.Exit(0)
 		}
-		fmt.Fprintf(os.Stderr, "iflint doctor: found %d issue(s)\n", len(findings))
+		fmt.Fprintf(os.Stderr, "ifttt doctor: found %d issue(s)\n", len(findings))
 		os.Exit(1)
 	}
 
 	if *scan != "" {
 		files, err := scanForLint(*scan, cfg.SkipDirs)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "iflint:", err)
+			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
 		}
 		opts := optionsFromConfig(cfg, factories)
@@ -346,7 +346,7 @@ func main() {
 			code = 0
 		}
 		if err := rw.Write(res.Findings, res.Suppressed); err != nil {
-			fmt.Fprintln(os.Stderr, "iflint:", err)
+			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
 		}
 		if *warn && code == 1 {
@@ -450,13 +450,13 @@ func main() {
 	}
 	write := func(findings, suppressed []core.Finding) {
 		if err := rw.Write(findings, suppressed); err != nil {
-			fmt.Fprintln(os.Stderr, "iflint:", err)
+			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
 		}
 	}
 	if *listSupp {
 		if len(res.Suppressed) == 0 {
-			fmt.Fprintln(os.Stderr, "iflint: no suppressed findings")
+			fmt.Fprintln(os.Stderr, "ifttt: no suppressed findings")
 		} else {
 			write(nil, res.Suppressed)
 		}
@@ -465,10 +465,10 @@ func main() {
 	write(res.Findings, res.Suppressed)
 	if *fix {
 		if applied, ok := res.Stats["fix_applied"].([]string); ok && len(applied) > 0 {
-			fmt.Fprintf(os.Stderr, "iflint: applied fixes\n%s\n", strings.Join(applied, "\n"))
+			fmt.Fprintf(os.Stderr, "ifttt: applied fixes\n%s\n", strings.Join(applied, "\n"))
 		}
 		if failures, ok := res.Stats["fix_errors"].([]string); ok && len(failures) > 0 {
-			fmt.Fprintf(os.Stderr, "iflint: fix errors\n%s\n", strings.Join(failures, "\n"))
+			fmt.Fprintf(os.Stderr, "ifttt: fix errors\n%s\n", strings.Join(failures, "\n"))
 		}
 	}
 	if *statsOut {
@@ -672,7 +672,7 @@ func runJump(args []string) error {
 		}
 		rng, ok := ranges[label]
 		if !ok {
-			return fmt.Errorf("label %q not found in %s. Use `iflint scaffold --source <source-file> --target %s#%s` to create it.", label, path, target, label)
+			return fmt.Errorf("label %q not found in %s. Use `ifttt scaffold --source <source-file> --target %s#%s` to create it.", label, path, target, label)
 		}
 		line = rng.StartLine
 	}
@@ -749,7 +749,7 @@ func commandExists(name string) bool {
 
 func runExplainCommand(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: iflint explain <rule-id>")
+		return errors.New("usage: ifttt explain <rule-id>")
 	}
 	return explainRule(strings.Join(args, " "))
 }
@@ -912,19 +912,19 @@ func runScaffold(args []string) error {
 	}
 	switch {
 	case writeSource && writeTarget:
-		msg := fmt.Sprintf("iflint scaffold: inserted directives for label %s (source + target)\n", label)
+		msg := fmt.Sprintf("ifttt scaffold: inserted directives for label %s (source + target)\n", label)
 		fmt.Print(msg)
 		ilog.Info("scaffold completed", "label", label, "mode", "both")
 	case writeSource:
-		msg := fmt.Sprintf("iflint scaffold: inserted source directives for label %s\n", label)
+		msg := fmt.Sprintf("ifttt scaffold: inserted source directives for label %s\n", label)
 		fmt.Print(msg)
 		ilog.Info("scaffold completed", "label", label, "mode", "source-only")
 	case writeTarget:
-		msg := fmt.Sprintf("iflint scaffold: inserted target directives for label %s\n", label)
+		msg := fmt.Sprintf("ifttt scaffold: inserted target directives for label %s\n", label)
 		fmt.Print(msg)
 		ilog.Info("scaffold completed", "label", label, "mode", "target-only")
 	default:
-		msg := fmt.Sprintf("iflint scaffold: nothing to do for label %s\n", label)
+		msg := fmt.Sprintf("ifttt scaffold: nothing to do for label %s\n", label)
 		fmt.Print(msg)
 		ilog.Warn("scaffold requested no changes", "label", label)
 	}
@@ -963,7 +963,7 @@ func runIgnoreAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("iflint ignore add: inserted %s at %s:%d\n", syn.PrefixDot+"Ignore", file, inserted)
+	fmt.Printf("ifttt ignore add: inserted %s at %s:%d\n", syn.PrefixDot+"Ignore", file, inserted)
 	ilog.Info("ignore directive inserted", "file", file, "line", inserted, "rule", rule)
 	return nil
 }
@@ -1579,19 +1579,19 @@ func runWatch(args []string) error {
 	var lastHash string
 
 	ilog.Info("watch starting", "interval", interval.String(), "diff_command", command, "status_command", *statusCmd)
-	fmt.Fprintf(os.Stderr, "iflint watch: polling \"%s\" every %s (Ctrl+C to stop)\n", command, interval)
+	fmt.Fprintf(os.Stderr, "ifttt watch: polling \"%s\" every %s (Ctrl+C to stop)\n", command, interval)
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Fprintln(os.Stderr, "iflint watch: stopping")
+			fmt.Fprintln(os.Stderr, "ifttt watch: stopping")
 			return nil
 		case <-ticker.C:
 			statusCommand := strings.TrimSpace(*statusCmd)
 			if statusCommand != "" {
 				statusOut, err := runShellCommand(statusCommand)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "iflint watch: status command failed: %v\n", err)
+					fmt.Fprintf(os.Stderr, "ifttt watch: status command failed: %v\n", err)
 					ilog.Error("status command failed", "command", statusCommand, "error", err)
 					continue
 				}
@@ -1605,7 +1605,7 @@ func runWatch(args []string) error {
 				diff, err = runShellCommand(command)
 			}
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "iflint watch: diff command failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ifttt watch: diff command failed: %v\n", err)
 				ilog.Error("diff command failed", "command", command, "error", err)
 				continue
 			}
@@ -1617,29 +1617,29 @@ func runWatch(args []string) error {
 			}
 			lastHash = hash
 			if trimmed == "" {
-				fmt.Fprintln(os.Stderr, "iflint watch: no diff")
+				fmt.Fprintln(os.Stderr, "ifttt watch: no diff")
 				ilog.Debug("watch diff empty, skipping run")
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "\niflint watch @ %s\n", time.Now().Format(time.RFC3339))
+			fmt.Fprintf(os.Stderr, "\nifttt watch @ %s\n", time.Now().Format(time.RFC3339))
 
 			if backend != nil && *revision != "" {
 				messages, e := backend.Messages(ctx, vcs.Request{Revision: *revision, Staged: *staged})
 				if e != nil {
-					fmt.Fprintln(os.Stderr, "iflint watch:", e)
+					fmt.Fprintln(os.Stderr, "ifttt watch:", e)
 					continue
 				}
 				opts.SuppressCoChanges = hasSuppression(messages)
 			}
 			res, code := lintAndReport(diff, opts)
 			if err := writer.Write(res.Findings, res.Suppressed); err != nil {
-				fmt.Fprintf(os.Stderr, "iflint watch: lint failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ifttt watch: lint failed: %v\n", err)
 				ilog.Error("watch lint failed", "error", err)
 				continue
 			}
 			fmt.Fprintf(
 				os.Stderr,
-				"iflint watch: findings=%d suppressed=%d exit=%d\n",
+				"ifttt watch: findings=%d suppressed=%d exit=%d\n",
 				len(res.Findings),
 				len(res.Suppressed),
 				code,
@@ -1699,7 +1699,7 @@ func runReview(args []string) error {
 		return err
 	}
 	if strings.TrimSpace(diff) == "" {
-		fmt.Fprintf(os.Stderr, "iflint review: diff for %s is empty\n", rev)
+		fmt.Fprintf(os.Stderr, "ifttt review: diff for %s is empty\n", rev)
 		os.Exit(0)
 	}
 
@@ -1712,7 +1712,7 @@ func runReview(args []string) error {
 	res, code := lintAndReport(diff, opts)
 	if *listSupp {
 		if len(res.Suppressed) == 0 {
-			fmt.Fprintln(os.Stderr, "iflint review: no suppressed findings")
+			fmt.Fprintln(os.Stderr, "ifttt review: no suppressed findings")
 		} else if err := writer.Write(nil, res.Suppressed); err != nil {
 			return err
 		}
@@ -1723,7 +1723,7 @@ func runReview(args []string) error {
 	}
 	fmt.Fprintf(
 		os.Stderr,
-		"iflint review: findings=%d suppressed=%d exit=%d\n",
+		"ifttt review: findings=%d suppressed=%d exit=%d\n",
 		len(res.Findings),
 		len(res.Suppressed),
 		code,

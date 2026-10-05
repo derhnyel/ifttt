@@ -38,7 +38,7 @@ export class FindingCodeActionProvider implements vscode.CodeActionProvider {
 
 			if (!finding.headRevision && (finding.ruleId === 'then_missing' || finding.ruleId === 'then_label_missing')) {
 				const addPlaceholder = new vscode.CodeAction(
-					'Insert placeholder via iflint --fix',
+					'Insert placeholder via ifttt --fix',
 					vscode.CodeActionKind.QuickFix
 				);
 				addPlaceholder.diagnostics = [diagnostic];

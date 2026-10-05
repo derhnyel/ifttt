@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func fatalInput(err error) { fmt.Fprintln(os.Stderr, "iflint:", err); os.Exit(2) }
+func fatalInput(err error) { fmt.Fprintln(os.Stderr, "ifttt:", err); os.Exit(2) }
 
 // Legacy patch files remain distinct from structural source selections. Explicit
 // --files accepts even files named .diff and removes positional ambiguity.
@@ -221,7 +221,7 @@ func matchFileGlobParts(p []string, path string) bool {
 func hasSuppression(messages string) bool {
 	for _, line := range strings.Split(messages, "\n") {
 		if strings.HasPrefix(line, "NO_IFTTT=") {
-			fmt.Fprintf(os.Stderr, "iflint: co-change checks suppressed: %s\n", strings.TrimPrefix(line, "NO_IFTTT="))
+			fmt.Fprintf(os.Stderr, "ifttt: co-change checks suppressed: %s\n", strings.TrimPrefix(line, "NO_IFTTT="))
 			return true
 		}
 	}

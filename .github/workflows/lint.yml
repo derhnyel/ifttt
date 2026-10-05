@@ -26,11 +26,37 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          # LINT.IfChange(repository_checkout)
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          # LINT.ThenChange(//scripts/test_action.py:repository_ci)
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      # LINT.IfChange(repository_ci)
+      - name: Build IFTTT Lint
+        run: make build
+      - name: Check directive structure
+        run: |
+          ./build/ifttt --vcs git '**/*' </dev/null
+      - name: Check linked edits
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Linked-edit checks require full base and head revision IDs.' >&2
+            exit 2
+          fi
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo 'The checkout must match the head revision being checked.' >&2
+            exit 2
+          fi
+          ./build/ifttt --vcs git --diff "${BASE_SHA}...${HEAD_SHA}" </dev/null
+      # LINT.ThenChange(//scripts/test_action.py:repository_ci)
       - name: Check formatting
         run: |
           files=$(gofmt -l cmd internal test)

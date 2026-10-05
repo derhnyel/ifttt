@@ -22,7 +22,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestGitHubFactoryProvidesRemote(t *testing.T) {
-	t.Setenv("IFLINT_CACHE_DIR", t.TempDir())
+	t.Setenv("IFTTT_CACHE_DIR", t.TempDir())
 	requestCount := 0
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		requestCount++
@@ -103,7 +103,7 @@ func TestGitHubFactoryProvidesRemote(t *testing.T) {
 }
 
 func TestGitHubFactoryUsesDefaultRefWhenMissing(t *testing.T) {
-	t.Setenv("IFLINT_CACHE_DIR", t.TempDir())
+	t.Setenv("IFTTT_CACHE_DIR", t.TempDir())
 	called := false
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		called = true
@@ -141,7 +141,7 @@ func TestGitHubFactoryUsesDefaultRefWhenMissing(t *testing.T) {
 }
 
 func TestGitHubDiskCacheIsolatedByRepository(t *testing.T) {
-	t.Setenv("IFLINT_CACHE_DIR", t.TempDir())
+	t.Setenv("IFTTT_CACHE_DIR", t.TempDir())
 	for _, repo := range []string{"first", "second"} {
 		factory, err := NewGitHubFactory([]GitHubRemote{{Repo: "isolation/" + repo, DefaultRef: "main"}})
 		if err != nil {
@@ -175,7 +175,7 @@ func TestAuthenticatedGitHubClientHasTimeout(t *testing.T) {
 }
 
 func TestGitHubRealHTTPAuthenticationRevalidationAndErrors(t *testing.T) {
-	t.Setenv("IFLINT_CACHE_DIR", t.TempDir())
+	t.Setenv("IFTTT_CACHE_DIR", t.TempDir())
 	var downloads, revalidations atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret-token" {
@@ -248,7 +248,7 @@ func TestGitHubRealHTTPAuthenticationRevalidationAndErrors(t *testing.T) {
 }
 
 func TestGitHubDiskCacheSeparatesCredentialsAndAPIHosts(t *testing.T) {
-	t.Setenv("IFLINT_CACHE_DIR", t.TempDir())
+	t.Setenv("IFTTT_CACHE_DIR", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, r.Header.Get("Authorization")) }))
 	defer server.Close()
 	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "other-host") }))
@@ -309,7 +309,7 @@ func TestAuthenticatedRemoteDoesNotFollowRedirectToAnotherHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("IFLINT_CACHE_DIR", t.TempDir())
+	t.Setenv("IFTTT_CACHE_DIR", t.TempDir())
 	if _, err = provider.ReadFile(actual); err == nil || leaked.Load() {
 		t.Fatalf("redirect followed: err=%v credential leaked=%v", err, leaked.Load())
 	}

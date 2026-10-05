@@ -124,10 +124,10 @@ jobs:
           sudo apt-get install -y xvfb "$GITHUB_WORKSPACE/build/tools/vscode.deb"
       - name: Actual VS Code host workflows (Git and jj)
         env:
-          IFLINT_VSCODE_BINARY: /usr/share/code/code
+          IFTTT_VSCODE_BINARY: /usr/share/code/code
         run: |
           xvfb-run -a python3 test/run-host.py
-          IFLINT_HOST_VCS=jj xvfb-run -a python3 test/run-host.py
+          IFTTT_HOST_VCS=jj xvfb-run -a python3 test/run-host.py
   ci:
     name: CI
     if: always()

@@ -243,7 +243,7 @@ func TestApplyFixes_InsertPlaceholderWhenTargetMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading target: %v", err)
 	}
-	if !strings.Contains(string(data), "TODO(iflint)") {
+	if !strings.Contains(string(data), "TODO(ifttt)") {
 		t.Fatalf("placeholder not inserted: %s", string(data))
 	}
 }

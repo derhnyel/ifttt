@@ -21,7 +21,7 @@ func (SARIF) Write(active []core.Finding, suppressed []core.Finding) error {
 		"$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
 		"version": "2.1.0",
 		"runs": []any{map[string]any{
-			"tool":    map[string]any{"driver": map[string]any{"name": "iflint"}},
+			"tool":    map[string]any{"driver": map[string]any{"name": "ifttt"}},
 			"results": results,
 		}},
 	}
@@ -92,13 +92,13 @@ func helpURIForFinding(f core.Finding) string {
 		if m := reThenTarget.FindStringSubmatch(f.Message); len(m) >= 2 {
 			path := m[1]
 			if len(m) >= 3 && m[2] != "" {
-				return "iflint://" + path + "#" + m[2]
+				return "ifttt://" + path + "#" + m[2]
 			}
-			return "iflint://" + path
+			return "ifttt://" + path
 		}
 	case "label_missing":
 		if m := reLabelNotFound.FindStringSubmatch(f.Message); len(m) >= 3 {
-			return "iflint://" + m[2] + "#" + m[1]
+			return "ifttt://" + m[2] + "#" + m[1]
 		}
 	}
 	return ""

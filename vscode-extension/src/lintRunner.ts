@@ -54,13 +54,13 @@ export class LintRunner {
 			const active = this.diagnostics.getFindings();
 			const ok = !active.some(finding => finding.severity === 'error');
 			this.setStatus(ok, active.length === 0 ? 'Clean' : `${active.length} issue(s)`);
-			if (!ok) { vscode.window.setStatusBarMessage('iflint: findings detected', 5000); }
+			if (!ok) { vscode.window.setStatusBarMessage('ifttt: findings detected', 5000); }
 			this.logInfo(`Lint run completed (${result.findings.length} finding(s))`);
 		} catch (err: any) {
 			if (this.latestRequest.get(scope) !== generation) { return; }
 			this.setStatus(false, 'Failed');
 			this.logError(`lint failed: ${err?.message ?? err}`);
-			vscode.window.showErrorMessage(`iflint failed: ${err.message ?? err}`);
+			vscode.window.showErrorMessage(`ifttt failed: ${err.message ?? err}`);
 		}
 	}
 
@@ -73,29 +73,29 @@ export class LintRunner {
 
 	async applyFix(resource?: vscode.Uri): Promise<void> {
 		try {
-			this.logInfo('Running iflint --fix');
+			this.logInfo('Running ifttt --fix');
 			const result = await this.execute(true, resource);
 			if (!result) {
-				vscode.window.showInformationMessage('iflint --fix: no diff to lint');
+				vscode.window.showInformationMessage('ifttt --fix: no diff to lint');
 				return;
 			}
-			const message = result.stderr?.trim() || 'iflint --fix completed';
+			const message = result.stderr?.trim() || 'ifttt --fix completed';
 			vscode.window.showInformationMessage(message);
 			await this.run(resource);
 		} catch (err: any) {
-			this.logError(`iflint --fix failed: ${err?.message ?? err}`);
-			vscode.window.showErrorMessage(`iflint --fix failed: ${err.message ?? err}`);
+			this.logError(`ifttt --fix failed: ${err?.message ?? err}`);
+			vscode.window.showErrorMessage(`ifttt --fix failed: ${err.message ?? err}`);
 		}
 	}
 
 	private async execute(fix: boolean, resource?: vscode.Uri): Promise<(LintResult & { workspaceRoot: string; stderr?: string }) | null> {
 		if (!vscode.workspace.isTrusted) {
-			vscode.window.showWarningMessage('iflint requires a trusted workspace to execute commands.');
+			vscode.window.showWarningMessage('ifttt requires a trusted workspace to execute commands.');
 			return null;
 		}
 		const folder = selectedWorkspaceFolder(resource);
 		if (!folder) {
-			vscode.window.showWarningMessage('iflint: no workspace folder open');
+			vscode.window.showWarningMessage('ifttt: no workspace folder open');
 			return null;
 		}
 		const cfg = vscode.workspace.getConfiguration('iftttLint', folder.uri);
@@ -103,7 +103,7 @@ export class LintRunner {
 		const diffCommand = cfg.get<string>('diffCommand', '').trim();
 		const changeSet = cfg.get<string>('changeSet', '').trim();
 		if (changeSet && diffCommand) { throw new Error('change-set mode cannot use diffCommand'); }
-		const binarySetting = cfg.get<string>('binary', 'iflint');
+		const binarySetting = cfg.get<string>('binary', 'ifttt');
 		const runArgs = [...cfg.get<string[]>('args', []), '--format=json'];
 		if (changeSet && (fix || runArgs.some(arg => arg === '--fix' || arg.startsWith('--fix=')))) {
 			throw new Error('change-set snapshot mode cannot apply --fix');
@@ -220,8 +220,8 @@ export class LintRunner {
 			raw?.Error ??
 			(typeof raw === 'string' ? raw : undefined);
 		const ruleId =
-			String(raw?.ruleId ?? raw?.code ?? raw?.RuleID ?? raw?.Code ?? 'iflint').trim() ||
-			'iflint';
+			String(raw?.ruleId ?? raw?.code ?? raw?.RuleID ?? raw?.Code ?? 'ifttt').trim() ||
+			'ifttt';
 		const message =
 			typeof resolvedMessage === 'string' && resolvedMessage.trim().length > 0
 				? resolvedMessage
@@ -268,8 +268,8 @@ export class LintRunner {
 	}
 
 	private setStatus(ok: boolean, text: string) {
-		this.status.text = ok ? `$(check) iflint: ${text}` : `$(error) iflint: ${text}`;
-		this.status.tooltip = 'IFLint';
+		this.status.text = ok ? `$(check) ifttt: ${text}` : `$(error) ifttt: ${text}`;
+		this.status.tooltip = 'IFTTT Lint';
 		this.status.command = 'iftttLint.run';
 		this.status.show();
 	}
@@ -330,7 +330,7 @@ export async function ensureBinaryPath(
 		if (pending) { await pending; return destination; }
 		if (fs.existsSync(destination)) {
 			await verifyBinary(destination, path.join(path.dirname(destination), 'SHA256SUMS'), asset, Date.now() + 30000);
-			if (!executable(destination)) { throw new Error('Cached iflint binary is not executable'); }
+			if (!executable(destination)) { throw new Error('Cached ifttt binary is not executable'); }
 			return destination;
 		}
 		const download = downloadBinary(normalizedBase, destination).finally(() => pendingDownloads.delete(destination));
@@ -340,15 +340,15 @@ export async function ensureBinaryPath(
 	}
 	// A legacy user installation remains available when automatic download is
 	// disabled, but it is never treated as a verified release cache.
-	const installed = path.join(installDir, process.platform === 'win32' ? 'iflint.exe' : 'iflint');
+	const installed = path.join(installDir, process.platform === 'win32' ? 'ifttt.exe' : 'ifttt');
 	if (executable(installed)) { return installed; }
-	throw new Error('Unable to locate iflint binary. Configure `iftttLint.binary` or install the tool manually.');
+	throw new Error('Unable to locate ifttt binary. Configure `iftttLint.binary` or install the tool manually.');
 }
 
 function releaseAssetName(): string {
 	const platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'darwin' : 'linux';
 	const arch = process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : process.arch;
-	return `iflint-${platform}-${arch}${process.platform === 'win32' ? '.exe' : ''}`;
+	return `ifttt-${platform}-${arch}${process.platform === 'win32' ? '.exe' : ''}`;
 }
 
 async function verifyBinary(binary: string, manifest: string, asset: string, deadline: number): Promise<void> {
@@ -410,7 +410,7 @@ function downloadFrom(url: string, destination: string, redirects: number, maxBy
 		};
 		const visit = (address: string, count: number) => {
 			if (settled) { return; }
-			if (count > 5) { fail(new Error('Too many redirects while downloading iflint.')); return; }
+			if (count > 5) { fail(new Error('Too many redirects while downloading ifttt.')); return; }
 			try {
 				if (new URL(address).protocol !== 'https:') { throw new Error('Binary downloads require HTTPS'); }
 				const activeRequest = https.get(address, incoming => {
@@ -473,14 +473,14 @@ export async function runBinary(binary: string, args: string[], cwd: string, inp
 			if (overflow) { return; }
 			const text = chunk.toString();
 			stdoutBytes += Buffer.byteLength(text, 'utf8');
-			if (stdoutBytes > 16 * 1024 * 1024) { failOverflow('iflint output exceeds 16 MiB'); return; }
+			if (stdoutBytes > 16 * 1024 * 1024) { failOverflow('ifttt output exceeds 16 MiB'); return; }
 			stdout += text;
 		});
 		child.stderr.on('data', chunk => {
 			if (overflow) { return; }
 			const text = chunk.toString();
 			stderrBytes += Buffer.byteLength(text, 'utf8');
-			if (stderrBytes > 16 * 1024 * 1024) { failOverflow('iflint error output exceeds 16 MiB'); return; }
+			if (stderrBytes > 16 * 1024 * 1024) { failOverflow('ifttt error output exceeds 16 MiB'); return; }
 			stderr += text;
 		});
 		child.on('error', reject);

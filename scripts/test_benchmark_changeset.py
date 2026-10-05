@@ -60,12 +60,12 @@ class ChangeSetBenchmarkTests(unittest.TestCase):
             calls=[]
             def run():
                 report=self.report();report['errors'][0]['message']='changed' if len(calls)==drift_at else 'baseline'
-                calls.append(1);return subprocess.CompletedProcess(['/iflint'],1,json.dumps(report).encode(),b''),1.0
+                calls.append(1);return subprocess.CompletedProcess(['/ifttt'],1,json.dumps(report).encode(),b''),1.0
             with self.subTest(drift_at=drift_at), self.assertRaisesRegex(RuntimeError,'baseline'):
                 collect(spec,run,15,2,False)
         calls=[]
         def clean_run():
-            calls.append(1);return subprocess.CompletedProcess(['/iflint'],1,json.dumps(self.report()).encode(),b''),1.0
+            calls.append(1);return subprocess.CompletedProcess(['/ifttt'],1,json.dumps(self.report()).encode(),b''),1.0
         result=collect(spec,clean_run,15,2,False)
         self.assertEqual(len(calls),18);self.assertEqual(result['samples_ms'],[1.0]*15)
         self.assertEqual(result['baseline']['report'],self.report());self.assertEqual(result['summary']['median_ms'],1.0)
@@ -75,7 +75,7 @@ class ChangeSetBenchmarkTests(unittest.TestCase):
     def test_rejected_preflight_exposes_raw_operational_error_without_collecting_samples(self):
         collect=bench.collect_row;calls=[]
         def run():
-            calls.append(1);return subprocess.CompletedProcess(['/iflint'],2,b'invalid output',b'unknown change-set flag'),1.0
+            calls.append(1);return subprocess.CompletedProcess(['/ifttt'],2,b'invalid output',b'unknown change-set flag'),1.0
         with self.assertRaisesRegex(RuntimeError,'unknown change-set flag'):
             collect(self.spec(),run,21,3,False)
         self.assertEqual(len(calls),1)
@@ -83,8 +83,8 @@ class ChangeSetBenchmarkTests(unittest.TestCase):
     def test_binary_provenance_records_sha_compiler_settings_and_rejects_cgo(self):
         metadata=bench.binary_metadata
         with tempfile.TemporaryDirectory() as temp:
-            binary=Path(temp)/'iflint';binary.write_bytes(b'binary contents')
-            build_info=b'/iflint: go1.26.8\n\tbuild\t-compiler=gc\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n'
+            binary=Path(temp)/'ifttt';binary.write_bytes(b'binary contents')
+            build_info=b'/ifttt: go1.26.8\n\tbuild\t-compiler=gc\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n'
             with patch.object(bench.subprocess,'run',return_value=subprocess.CompletedProcess([],0,build_info,b'')):
                 result=metadata(str(binary))
             self.assertEqual(result['go_cgo_enabled'],'0');self.assertEqual(result['go_binary_version'],'go1.26.8')
@@ -96,12 +96,12 @@ class ChangeSetBenchmarkTests(unittest.TestCase):
         validate=bench.validate_options;validate(21,3)
         for values in [(14,3),(21,-1)]:
             with self.assertRaises(ValueError): validate(*values)
-        parser=bench.parse_options;options=parser(['--go','build/iflint','--check-only'])
+        parser=bench.parse_options;options=parser(['--go','build/ifttt','--check-only'])
         self.assertTrue(options.check_only);self.assertEqual(options.samples,21);self.assertEqual(options.warmups,3)
         self.assertEqual(options.output,Path('build/benchmarks/cross-repository.json'))
         for args in [['--samples','14'],['--warmups','-1']]:
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                parser(['--go','build/iflint',*args])
+                parser(['--go','build/ifttt',*args])
 
     def test_fixture_uses_two_independent_committed_snapshots_and_strict_manifest(self):
         fixture=bench.fixture
@@ -128,7 +128,7 @@ class ChangeSetBenchmarkTests(unittest.TestCase):
 
     def test_markdown_json_roundtrip_preserves_preflight_and_shows_no_upstream_comparison(self):
         render=bench.render_report;write=bench.write_report
-        data=dict(metadata=dict(samples=21,warmups=3,check_only=True,binary={'path':'/iflint','sha256':'binarysha'},go_build_info='go build metadata',go_cgo_enabled='0',build_command=['go','build','-trimpath'],compiler_flags=['-trimpath']),results=[{**self.spec(), 'command':['/iflint','--change-set','/fixture/changes.yml','--format=json','--threads','2'], 'baseline':{'exit':1,'report':self.report(),'stdout':json.dumps(self.report()),'stderr':''},'samples_ms':[],'summary':{}}])
+        data=dict(metadata=dict(samples=21,warmups=3,check_only=True,binary={'path':'/ifttt','sha256':'binarysha'},go_build_info='go build metadata',go_cgo_enabled='0',build_command=['go','build','-trimpath'],compiler_flags=['-trimpath']),results=[{**self.spec(), 'command':['/ifttt','--change-set','/fixture/changes.yml','--format=json','--threads','2'], 'baseline':{'exit':1,'report':self.report(),'stdout':json.dumps(self.report()),'stderr':''},'samples_ms':[],'summary':{}}])
         self.assertEqual(render(data),render(json.loads(json.dumps(data))))
         text=render(data);self.assertIn('Untimed preflight',text);self.assertIn('binarysha',text);self.assertIn('then_label_missing',text);self.assertIn('native Git',text);self.assertIn('--threads',text);self.assertNotIn('speedup',text.lower())
         with tempfile.TemporaryDirectory() as temp:

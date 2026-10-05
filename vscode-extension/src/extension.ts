@@ -17,13 +17,13 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.StatusBarAlignment.Left,
 		100
 	);
-	const outputChannel = vscode.window.createOutputChannel('IFLint');
+	const outputChannel = vscode.window.createOutputChannel('IFTTT Lint');
 	const verboseLogging = vscode.workspace
 		.getConfiguration('iftttLint')
 		.get<boolean>('verboseLogging', false);
 	const runner = new LintRunner(diagnostics, statusBarItem, outputChannel, verboseLogging);
 	const treeProvider = new FindingsTreeProvider(diagnostics);
-	const treeView = vscode.window.createTreeView('iflint.findings', {
+	const treeView = vscode.window.createTreeView('ifttt.findings', {
 		treeDataProvider: treeProvider
 	});
 
@@ -56,19 +56,19 @@ export function activate(context: vscode.ExtensionContext) {
 	const scaffoldDirective = vscode.commands.registerCommand(
 		'iftttLint.scaffoldDirective',
 		async (sourcePath: string, targetPath: string, label: string | null, ownerUri?: vscode.Uri) => {
-			if (isRemoteTarget(targetPath)) { vscode.window.showErrorMessage('iflint scaffold: remote targets cannot use filesystem commands'); return; }
+			if (isRemoteTarget(targetPath)) { vscode.window.showErrorMessage('ifttt scaffold: remote targets cannot use filesystem commands'); return; }
 			const sourceUri = vscode.Uri.file(sourcePath);
 			const resource = ownerUri ?? sourceUri;
 			const folder = selectedWorkspaceFolder(resource);
 			if (!folder) {
-				vscode.window.showErrorMessage('iflint scaffold: no workspace folder open');
+				vscode.window.showErrorMessage('ifttt scaffold: no workspace folder open');
 				return;
 			}
 			const cfg = vscode.workspace.getConfiguration('iftttLint', folder.uri);
-			if (cfg.get<string>('changeSet', '').trim()) { vscode.window.showErrorMessage('iflint scaffold: change-set snapshots are read-only'); return; }
+			if (cfg.get<string>('changeSet', '').trim()) { vscode.window.showErrorMessage('ifttt scaffold: change-set snapshots are read-only'); return; }
 			const workingDirectory = resolveWorkingDirectory(folder, cfg.get<string>('workingDirectory'));
 			try {
-				const binarySetting = cfg.get<string>('binary', 'iflint');
+				const binarySetting = cfg.get<string>('binary', 'ifttt');
 				const downloadBaseUrl = cfg.get<string>(
 					'downloadBaseUrl',
 					''
@@ -78,17 +78,17 @@ export function activate(context: vscode.ExtensionContext) {
 				const targetSpec = label ? `${targetPath}#${label}` : targetPath;
 				const args = ['scaffold', '--source', relSource, '--target', targetSpec];
 				await runCli(binaryPath, args, workingDirectory);
-				vscode.window.showInformationMessage('iflint scaffold completed');
+				vscode.window.showInformationMessage('ifttt scaffold completed');
 				await runner.run(resource);
 			} catch (err: any) {
-				vscode.window.showErrorMessage(`iflint scaffold failed: ${err?.message ?? err}`);
+				vscode.window.showErrorMessage(`ifttt scaffold failed: ${err?.message ?? err}`);
 			}
 		}
 	);
 
 	const runCommand = vscode.commands.registerCommand('iftttLint.run', () => runner.run());
 	const applyFix = vscode.commands.registerCommand('iftttLint.applyFix', (resource?: vscode.Uri) => {
-		if (isSnapshotMode(resource)) { vscode.window.showErrorMessage('iflint --fix: change-set snapshots are read-only'); return; }
+		if (isSnapshotMode(resource)) { vscode.window.showErrorMessage('ifttt --fix: change-set snapshots are read-only'); return; }
 		return runner.applyFix(resource);
 	});
 
@@ -157,7 +157,7 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Initial run
-	runner.run().catch(error => console.error('iflint initial run failed', error));
+	runner.run().catch(error => console.error('ifttt initial run failed', error));
 }
 
 export function deactivate() {
@@ -179,7 +179,7 @@ async function runCli(binaryPath: string, args: string[], cwd: string): Promise<
 				overflow = true;
 				stderr = '';
 				proc.kill('SIGKILL');
-				reject(new Error('iflint error output exceeds 16 MiB'));
+				reject(new Error('ifttt error output exceeds 16 MiB'));
 				return;
 			}
 			stderr += text;
@@ -189,7 +189,7 @@ async function runCli(binaryPath: string, args: string[], cwd: string): Promise<
 			if (code === 0) {
 				resolve();
 			} else {
-				reject(new Error(stderr.trim() || `iflint exited with status ${code}`));
+				reject(new Error(stderr.trim() || `ifttt exited with status ${code}`));
 			}
 		});
 	});
@@ -201,20 +201,20 @@ function isSnapshotMode(resource?: vscode.Uri): boolean {
 }
 
 async function jumpToLocation(targetPath: string, label?: string, ownerUri?: vscode.Uri) {
-	if (isRemoteTarget(targetPath)) { throw new Error('iflint navigation: remote targets cannot use filesystem commands'); }
-	if (label && isSnapshotMode(ownerUri ?? vscode.Uri.file(targetPath))) { throw new Error('iflint jump: change-set snapshots cannot use working-copy labels'); }
+	if (isRemoteTarget(targetPath)) { throw new Error('ifttt navigation: remote targets cannot use filesystem commands'); }
+	if (label && isSnapshotMode(ownerUri ?? vscode.Uri.file(targetPath))) { throw new Error('ifttt jump: change-set snapshots cannot use working-copy labels'); }
 	let line = 0;
 	if (label) {
 		const folder = selectedWorkspaceFolder(ownerUri ?? vscode.Uri.file(targetPath));
-		if (!folder) { throw new Error('iflint jump: no workspace folder open'); }
+		if (!folder) { throw new Error('ifttt jump: no workspace folder open'); }
 		const cfg = vscode.workspace.getConfiguration('iftttLint', folder.uri);
 		const workingDirectory = resolveWorkingDirectory(folder, cfg.get<string>('workingDirectory'));
-		const binary = await ensureBinaryPath(cfg.get<string>('binary', 'iflint'), cfg.get<string>('downloadBaseUrl', ''), workingDirectory);
+		const binary = await ensureBinaryPath(cfg.get<string>('binary', 'ifttt'), cfg.get<string>('downloadBaseUrl', ''), workingDirectory);
 		const result = await runBinary(binary, ['jump', '--print-location', '--', targetPath, label], workingDirectory, '');
-		if (result.status !== 0) { throw new Error(result.stderr || `iflint jump exited with ${result.status}`); }
+		if (result.status !== 0) { throw new Error(result.stderr || `ifttt jump exited with ${result.status}`); }
 		const location = JSON.parse(result.stdout);
 		if (typeof location.file !== 'string' || !path.isAbsolute(location.file) || !Number.isSafeInteger(location.line) || location.line < 1) {
-			throw new Error('iflint jump returned an invalid location');
+			throw new Error('ifttt jump returned an invalid location');
 		}
 		targetPath = location.file;
 		line = location.line - 1;

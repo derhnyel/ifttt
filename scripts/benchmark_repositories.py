@@ -313,7 +313,7 @@ def render_report(data):
         lines += [f"git clone --no-checkout --depth 1 {shlex.quote(repo['url'])} {directory}",
                   f"git -C {directory} fetch --depth 1 origin {shlex.quote(repo['commit'])}",
                   f"git -C {directory} checkout --detach FETCH_HEAD"]
-    reproduce = ['python3', 'scripts/benchmark_repositories.py', '--go', 'build/iflint',
+    reproduce = ['python3', 'scripts/benchmark_repositories.py', '--go', 'build/ifttt',
                  '--upstream', 'build/upstream/ifttt-lint', '--repos', 'build/benchmark-repos']
     for repo in metadata.get('requested_repositories', []):
         reproduce += ['--repository', repo]
