@@ -81,6 +81,8 @@ func newDefaultRepo(t *testing.T) repo {
 	}
 	r.env = append(r.env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+filepath.Join(isolated, "gitconfig"), "IFTTT_CACHE_DIR="+filepath.Join(isolated, "cache"), "XDG_CONFIG_HOME="+isolated)
 	r.git(t, "init", "-q")
+	// Detached maintenance can outlive a disposable repository and race cleanup.
+	r.git(t, "config", "maintenance.auto", "false")
 	r.git(t, "config", "user.name", "Integration Test")
 	r.git(t, "config", "user.email", "integration@example.invalid")
 	return r
