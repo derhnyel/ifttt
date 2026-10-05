@@ -18,6 +18,26 @@ import (
 	"github.com/derhnyel/ifttt/internal/vcs"
 )
 
+func TestDoctorScaffoldPreservesFilesystemOctalLikeNames(t *testing.T) {
+	previous := core.CurrentDirectiveSyntax().Prefix
+	core.SetDirectivePrefix("LINT")
+	t.Cleanup(func() { core.SetDirectivePrefix(previous) })
+	root := filepath.Join(t.TempDir(), `numeric\001`)
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "source.go"), []byte("// LINT.IfChange(SRC)\nbody\n// LINT.ThenChange(//target.go:API)\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runDoctor(root, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	ranges, err := eng.LabelRanges(filepath.Join(root, "target.go"))
+	if err != nil || ranges["API"].StartLine == 0 {
+		t.Fatalf("doctor changed a filesystem path into an escape: %+v, %v", ranges, err)
+	}
+}
+
 func TestDeriveLabel(t *testing.T) {
 	cases := map[string]string{
 		"foo/bar.go":     "BAR",

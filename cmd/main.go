@@ -836,13 +836,17 @@ func runScaffold(args []string) error {
 		if err != nil {
 			return err
 		}
-		absoluteTarget, err := filepath.Abs(targetPath)
+		absoluteTarget, err := canonicalInputPath(targetPath)
 		if err != nil {
 			return err
 		}
 		root := cwd
 		if backend, err := vcs.Open(context.Background(), cwd, "auto"); err == nil {
 			root = backend.Root
+		}
+		root, err = canonicalInputPath(root)
+		if err != nil {
+			return err
 		}
 		relativeTarget, err := filepath.Rel(root, absoluteTarget)
 		if err != nil {
@@ -1449,7 +1453,7 @@ func ensureLabelScaffoldWithFixer(root string, ref core.TargetRef, syn core.Dire
 	if !filepath.IsAbs(targetPath) {
 		targetPath = filepath.Join(root, targetPath)
 	}
-	targetPath = core.NormalizePath(targetPath)
+	targetPath = filepath.Clean(targetPath)
 	if err := eng.ValidateFixPath(root, targetPath); err != nil {
 		return false, err
 	}
