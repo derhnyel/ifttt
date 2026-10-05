@@ -1,7 +1,7 @@
 {
-  "name": "ifttt-lint-helper",
-  "displayName": "IFTTT Lint Helper",
-  "description": "Run iflint in VS Code and highlight required cross-file updates.",
+  "name": "ifttt",
+  "displayName": "IFTTT Lint",
+  "description": "Run ifttt in VS Code and highlight required cross-file updates.",
   "version": "0.1.0",
   "publisher": "derhnyel",
   "repository": {
@@ -54,8 +54,8 @@
     "views": {
       "explorer": [
         {
-          "id": "iflint.findings",
-          "name": "IFLint Findings"
+          "id": "ifttt.findings",
+          "name": "IFTTT Lint Findings"
         }
       ]
     },
@@ -76,8 +76,8 @@
         },
         "iftttLint.binary": {
           "type": "string",
-          "default": "iflint",
-          "description": "Path or PATH command name of the installed iflint executable.",
+          "default": "ifttt",
+          "description": "Path or PATH command name of the installed ifttt executable.",
           "scope": "resource"
         },
         "iftttLint.args": {
@@ -88,7 +88,7 @@
           "default": [
             "--format=json"
           ],
-          "description": "Extra CLI arguments passed to ifttt-lint.",
+          "description": "Extra CLI arguments passed to ifttt.",
           "scope": "resource"
         },
         "iftttLint.workingDirectory": {
@@ -114,7 +114,7 @@
         "iftttLint.verboseLogging": {
           "type": "boolean",
           "default": false,
-          "description": "Enable verbose logging in the IFLint output channel (shows debug messages)."
+          "description": "Enable verbose logging in the IFTTT Lint output channel (shows debug messages)."
         },
         "iftttLint.runOnSave": {
           "type": "boolean",
@@ -125,7 +125,7 @@
         "iftttLint.downloadBaseUrl": {
           "type": "string",
           "default": "",
-          "description": "Optional HTTPS release URL serving platform iflint binaries and SHA256SUMS. Downloads require checksum verification. Disabled by default.",
+          "description": "Optional HTTPS release URL serving platform ifttt binaries and SHA256SUMS. Downloads require checksum verification. Disabled by default.",
           "scope": "resource"
         },
         "iftttLint.vcs": {
@@ -162,7 +162,7 @@
     "compile": "tsc -p ./",
     "lint": "tsc -p ./ --noEmit",
     "package": "vsce package --no-dependencies",
-    "vscode:prepublish": "node -e \"require('node:fs').copyFileSync('../README.md', 'README.md')\" && npm run compile",
+    "vscode:prepublish": "npm run compile",
     "test": "npm run compile && node --test test/*.test.js",
     "package:local": "vsce package --no-dependencies --allow-missing-repository --skip-license"
   },
@@ -175,7 +175,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "IFLint executes workspace commands and can modify directive targets."
+      "description": "IFTTT Lint executes workspace commands and can modify directive targets."
     },
     "virtualWorkspaces": false
   },

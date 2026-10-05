@@ -40,7 +40,7 @@ func TestLoadNotFound(t *testing.T) {
 func setupCacheDir(t *testing.T) {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("IFLINT_CACHE_DIR", filepath.Join(tmp, "cache"))
+	t.Setenv("IFTTT_CACHE_DIR", filepath.Join(tmp, "cache"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, "cache"))
 	// ensure darwin path exists too
 	_ = os.MkdirAll(filepath.Join(tmp, "Library", "Caches"), 0o755)

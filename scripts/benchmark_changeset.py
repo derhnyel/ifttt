@@ -195,7 +195,7 @@ def render_report(data, output_name='cross-repository.json'):
         values = [f'{summary[key]:.3f}' if summary else '—' for key in ('min_ms', 'median_ms', 'p95_ms', 'max_ms', 'stdev_ms')]
         lines.append(f'| {row["pairs"]} / {"paired" if row["paired"] else "source-only"} | {row["expected_findings"]} / {row["baseline"]["exit"]} | ' + ' | '.join(values) + ' |')
     lines += ['', 'Reproduce with a fresh standard build and generated fixtures:', '', '```sh',
-              'make build', 'python3 scripts/benchmark_changeset.py --go build/iflint --output build/benchmarks/cross-repository.json',
+              'make build', 'python3 scripts/benchmark_changeset.py --go build/ifttt --output build/benchmarks/cross-repository.json',
               '# Add --check-only for an untimed correctness preflight.', '```', '']
     return '\n'.join(lines)
 
@@ -221,7 +221,7 @@ def binary_metadata(binary):
     return dict(binary=dict(path=binary, sha256=hashlib.sha256(Path(binary).read_bytes()).hexdigest()),
                 go_build_info=build_info, go_cgo_enabled=cgo,
                 go_binary_version=build_info.splitlines()[0].split()[-1],
-                compiler_flags=settings, build_command=['env', 'CGO_ENABLED=0', 'go', 'build', '-trimpath', '-o', '../build/iflint', './cmd'])
+                compiler_flags=settings, build_command=['env', 'CGO_ENABLED=0', 'go', 'build', '-trimpath', '-o', '../build/ifttt', './cmd/ifttt'])
 
 
 def main(argv=None):
@@ -235,7 +235,7 @@ def main(argv=None):
                 'cache_state': 'Warm OS filesystem caches; no cache flush; CLI process restarted each sample',
                 'timing_scope': 'Subprocess startup, native Git snapshot work and JSON output included; build/fixture generation excluded'}
     results = []
-    with tempfile.TemporaryDirectory(prefix='iflint-changeset-benchmark-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='ifttt-changeset-benchmark-') as temporary:
         for pairs, paired in selected_workloads():
             spec = fixture(Path(temporary) / f'{pairs}-{"paired" if paired else "source-only"}', pairs, paired)
             command = command_for(binary, spec)

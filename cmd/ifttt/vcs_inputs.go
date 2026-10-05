@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func fatalInput(err error) { fmt.Fprintln(os.Stderr, "iflint:", err); os.Exit(2) }
+func fatalInput(err error) { fmt.Fprintln(os.Stderr, "ifttt:", err); os.Exit(2) }
 
 // Legacy patch files remain distinct from structural source selections. Explicit
 // --files accepts even files named .diff and removes positional ambiguity.
@@ -36,11 +36,38 @@ func classifyInputs(args, explicit []string, revision bool) ([]string, string, e
 	return selected, patch, nil
 }
 func rootSelectedFiles(files []string, root string) ([]string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]string, 0, len(files))
 	for _, file := range files {
-		absolute, err := filepath.Abs(file)
-		if err != nil {
-			return nil, err
+		absolute := filepath.Join(cwd, file)
+		if filepath.IsAbs(file) {
+			input := file
+			suffix := ""
+			if index := strings.IndexAny(file, "*?["); index >= 0 {
+				input = filepath.Dir(file[:index])
+				suffix, err = filepath.Rel(input, file)
+				if err != nil {
+					return nil, err
+				}
+			}
+			absolute, err = canonicalInputPath(input)
+			if err != nil {
+				return nil, err
+			}
+			if suffix != "" {
+				absolute = filepath.Join(absolute, suffix)
+			}
 		}
 		relative, err := filepath.Rel(root, absolute)
 		if err != nil {
@@ -52,6 +79,34 @@ func rootSelectedFiles(files []string, root string) ([]string, error) {
 		result = append(result, relative)
 	}
 	return result, nil
+}
+
+// Resolve filesystem aliases even when the leaf is a new scaffold.
+func canonicalInputPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	ancestor := absolute
+	var suffix []string
+	for {
+		resolved, err := filepath.EvalSymlinks(ancestor)
+		if err == nil {
+			for i := len(suffix) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, suffix[i])
+			}
+			return resolved, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(ancestor))
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return "", err
+		}
+		ancestor = parent
+	}
 }
 func expandSelectedFiles(patterns []string) ([]string, error) {
 	return expandTrackedFiles(patterns, nil)
@@ -166,7 +221,7 @@ func matchFileGlobParts(p []string, path string) bool {
 func hasSuppression(messages string) bool {
 	for _, line := range strings.Split(messages, "\n") {
 		if strings.HasPrefix(line, "NO_IFTTT=") {
-			fmt.Fprintf(os.Stderr, "iflint: co-change checks suppressed: %s\n", strings.TrimPrefix(line, "NO_IFTTT="))
+			fmt.Fprintf(os.Stderr, "ifttt: co-change checks suppressed: %s\n", strings.TrimPrefix(line, "NO_IFTTT="))
 			return true
 		}
 	}

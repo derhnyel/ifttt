@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Name the CLI `ifttt` and the VS Code extension `IFTTT Lint`. Go installs use `github.com/derhnyel/ifttt/cmd/ifttt`.
+- Use `IFTTT_*` environment variables, `ifttt` hook IDs and `ifttt-<os>-<arch>` release binaries.
+- Keep normal Git diffs active when changed source text contains a literal combined-diff header.
 - Move the Go module, CLI, tests and VS Code extension to the repository root; consolidate project documentation into README sections.
 - CLI with native Git/jj workflows, structural and co-change checks, conditional rules, JSON/SARIF/DLS reports, and explicit cross-repository snapshot validation.
 - VS Code diagnostics, navigation, scaffolding and fixes; snapshot reports remain read-only.

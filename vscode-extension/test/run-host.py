@@ -11,22 +11,22 @@ import time
 extension = Path(__file__).resolve().parents[1]
 project = extension.parent
 native_mac_host = Path('/Applications/Visual Studio Code.app/Contents/MacOS/Code')
-code = os.environ.get('IFLINT_VSCODE_BINARY') or (str(native_mac_host) if native_mac_host.exists() else shutil.which('code'))
+code = os.environ.get('IFTTT_VSCODE_BINARY') or (str(native_mac_host) if native_mac_host.exists() else shutil.which('code'))
 if not code:
-    raise SystemExit('Install VS Code or set IFLINT_VSCODE_BINARY to its CLI executable')
-backend = os.environ.get('IFLINT_HOST_VCS', 'git')
+    raise SystemExit('Install VS Code or set IFTTT_VSCODE_BINARY to its CLI executable')
+backend = os.environ.get('IFTTT_HOST_VCS', 'git')
 if backend not in ('git', 'jj'):
-    raise SystemExit('IFLINT_HOST_VCS must be git or jj')
+    raise SystemExit('IFTTT_HOST_VCS must be git or jj')
 environment = os.environ.copy()
 # The Electron CLI shim may exit successfully without launching an extension host.
 environment.pop('ELECTRON_RUN_AS_NODE', None)
 environment['PATH'] = str(project / 'build/tools') + os.pathsep + environment.get('PATH', '')
-with tempfile.TemporaryDirectory(prefix='iflint-host-') as temporary:
+with tempfile.TemporaryDirectory(prefix='ifttt-host-') as temporary:
     state = Path(temporary)
     root = state / 'workspace'
     root.mkdir()
-    binary = state / ('iflint.exe' if os.name == 'nt' else 'iflint')
-    subprocess.run(['go', 'build', '-o', str(binary), './cmd'], cwd=project, check=True, env=environment)
+    binary = state / ('ifttt.exe' if os.name == 'nt' else 'ifttt')
+    subprocess.run(['go', 'build', '-o', str(binary), './cmd/ifttt'], cwd=project, check=True, env=environment)
     subprocess.run(['npm', 'run', 'compile'], cwd=extension, check=True, env=environment)
     def vcs(*args):
         subprocess.run([backend, *args], cwd=root, check=True, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='iflint-host-') as temporary:
     workspace = state / 'fixture.code-workspace'
     workspace.write_text(json.dumps({'folders': [{'path': str(primary)}, {'path': str(secondary)}, {'path': str(opened)}]}))
     marker = state / 'host-result.json'
-    environment['IFLINT_HOST_RESULT'] = str(marker)
+    environment['IFTTT_HOST_RESULT'] = str(marker)
     command = [code, '--user-data-dir', str(state / 'user'),
                     '--extensions-dir', str(state / 'extensions'),
                     '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes',

@@ -46,12 +46,12 @@ func BenchmarkStructuralContracts(b *testing.B) {
 	}
 }
 
-// IFLINT_BENCHMARK_REPOSITORY selects an existing checkout for repeatable
+// IFTTT_BENCHMARK_REPOSITORY selects an existing checkout for repeatable
 // structural CPU/allocation profiles without cloning in the timed region.
 func BenchmarkStructuralRepository(b *testing.B) {
-	root := os.Getenv("IFLINT_BENCHMARK_REPOSITORY")
+	root := os.Getenv("IFTTT_BENCHMARK_REPOSITORY")
 	if root == "" {
-		b.Skip("set IFLINT_BENCHMARK_REPOSITORY to a checkout")
+		b.Skip("set IFTTT_BENCHMARK_REPOSITORY to a checkout")
 	}
 	root, err := filepath.Abs(root)
 	if err != nil {

@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import zipfile
 
-BINARIES = tuple(f'iflint-{system}-{arch}' + ('.exe' if system == 'windows' else '')
+BINARIES = tuple(f'ifttt-{system}-{arch}' + ('.exe' if system == 'windows' else '')
                  for system in ('linux', 'darwin', 'windows') for arch in ('amd64', 'arm64'))
 TAG = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?')
 ROOT = Path(__file__).resolve().parents[1]
@@ -104,13 +104,13 @@ def smoke_native(directory, tag, commit):
     arch = {'arm64':'arm64','aarch64':'arm64','x86_64':'amd64','amd64':'amd64'}.get(platform.machine().lower())
     system = {'Darwin':'darwin','Linux':'linux','Windows':'windows'}.get(platform.system())
     if not arch or not system: raise ValueError('unsupported release smoke-test host')
-    binary = directory / f'iflint-{system}-{arch}'
+    binary = directory / f'ifttt-{system}-{arch}'
     if system == 'windows': binary = binary.with_suffix('.exe')
     if system != 'windows': binary.chmod(binary.stat().st_mode | 0o111)
     result = subprocess.run([str(binary.resolve()), '--version'], capture_output=True, text=True, check=True, timeout=15)
-    if result.stdout != f'iflint {tag} (commit {commit})\n':
+    if result.stdout != f'ifttt {tag} (commit {commit})\n':
         raise ValueError('native release executable has incorrect version/commit metadata')
-    with tempfile.TemporaryDirectory(prefix='iflint-release-smoke-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='ifttt-release-smoke-') as temporary:
         root = Path(temporary)
         (root / '.ifttt-lint.yaml').write_text('directives:\n  prefix: LINT\nrules:\n  unknown_directive: error\n')
         (root / 'source.go').write_text('// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange(//target.md:API)\n')

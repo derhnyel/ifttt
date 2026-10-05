@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -16,7 +17,7 @@ BUILD, RUN = [re.sub(r'^        ', '', step, flags=re.MULTILINE) for step in STE
 class ActionIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.state = tempfile.TemporaryDirectory(prefix='iflint action integration ')
+        cls.state = tempfile.TemporaryDirectory(prefix='ifttt action integration ')
         cls.addClassCleanup(cls.state.cleanup)
         cls.tools = Path(cls.state.name) / 'tool bin'
         path_file = Path(cls.state.name) / 'github-path'
@@ -29,7 +30,7 @@ class ActionIntegrationTests(unittest.TestCase):
             raise AssertionError('Action did not expose its built executable through GITHUB_PATH')
 
     def setUp(self):
-        self.fixture = tempfile.TemporaryDirectory(prefix='iflint action consumer ')
+        self.fixture = tempfile.TemporaryDirectory(prefix='ifttt action consumer ')
         self.addCleanup(self.fixture.cleanup)
         self.root = Path(self.fixture.name)
         self.origin = self.root / 'origin'
@@ -109,6 +110,66 @@ class ActionIntegrationTests(unittest.TestCase):
         result = self.run_action(checkout, 1, DIFF_PATH=patch.name, EVENT_NAME='workflow_dispatch')
         self.assertTrue(json.loads(result.stdout)['errors'])
         self.assertIn('stdin', self.run_action(checkout, 2, DIFF_PATH='-').stderr.lower())
+
+    # LINT.IfChange(repository_ci)
+    def run_repository_lint(self, checkout, step_name, expected, **inputs):
+        workflow = (ROOT / '.github/workflows/lint.yml').read_text()
+        section = workflow.split(f'      - name: {step_name}\n', 1)
+        self.assertEqual(len(section), 2, f'Missing repository lint step: {step_name}')
+        match = re.search(r'        run: \|\n((?:          .*\n|\n)+)', section[1])
+        self.assertIsNotNone(match, f'Missing shell body: {step_name}')
+        script = re.sub(r'^          ', '', match.group(1), flags=re.MULTILINE)
+        executable = 'ifttt.exe' if os.name == 'nt' else 'ifttt'
+        build = checkout / 'build'
+        build.mkdir(exist_ok=True)
+        shutil.copy2(self.tools / executable, build / executable)
+        environment = dict(os.environ, BASE_SHA=self.base,
+                           HEAD_SHA=self.git(self.origin, 'rev-parse', 'HEAD'))
+        environment.update(inputs)
+        result = subprocess.run(['bash', '-c', script], cwd=checkout, env=environment,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+        return result
+
+    def test_repository_ci_checks_all_pr_commits_and_requires_the_target_label(self):
+        self.change_source()
+        (self.origin / 'target.md').write_text('Unrelated edit outside the label.\n' +
+                                             (self.origin / 'target.md').read_text())
+        self.commit('edit unrelated target text')
+        checkout = self.clone()
+        self.git(checkout, 'fetch', '--unshallow', 'origin')
+        self.run_repository_lint(checkout, 'Check linked edits', 1)
+        target = self.origin / 'target.md'
+        target.write_text(target.read_text().replace('API: 1', 'API: 2'))
+        head = self.commit('update linked label')
+        self.git(checkout, 'fetch', 'origin', head)
+        self.git(checkout, 'checkout', '--detach', head)
+        self.run_repository_lint(checkout, 'Check linked edits', 0)
+
+    def test_repository_ci_checks_merge_group_range_and_rejects_bad_evidence(self):
+        head = self.change_source()
+        self.git(self.origin, 'checkout', 'main')
+        (self.origin / 'main-only.txt').write_text('advance the base branch\n')
+        merge_base = self.commit('advance main')
+        self.git(self.origin, 'merge', '--no-ff', 'feature', '-m', 'merge queue candidate')
+        merge_head = self.git(self.origin, 'rev-parse', 'HEAD')
+        checkout = self.clone()
+        self.git(checkout, 'fetch', '--unshallow', 'origin')
+        self.git(checkout, 'fetch', 'origin', merge_head)
+        self.git(checkout, 'checkout', '--detach', merge_head)
+        self.run_repository_lint(checkout, 'Check linked edits', 1,
+                                 BASE_SHA=merge_base, HEAD_SHA=merge_head)
+        self.run_repository_lint(checkout, 'Check linked edits', 2,
+                                 BASE_SHA='', HEAD_SHA=merge_head)
+        self.run_repository_lint(checkout, 'Check linked edits', 2,
+                                 BASE_SHA=merge_base, HEAD_SHA=head)
+
+    def test_repository_ci_structural_check_rejects_broken_links(self):
+        checkout = self.clone()
+        self.run_repository_lint(checkout, 'Check directive structure', 0)
+        (checkout / 'target.md').unlink()
+        self.run_repository_lint(checkout, 'Check directive structure', 1)
+    # LINT.ThenChange()
 
     def test_change_set_checks_real_committed_repositories_without_pr_fetches(self):
         contracts = self.root / 'contracts checkout'

@@ -18,17 +18,17 @@ var binary string
 var integrationCoverDir string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "iflint-integration-")
+	dir, err := os.MkdirTemp("", "ifttt-integration-")
 	if err != nil {
 		panic(err)
 	}
-	binary = filepath.Join(dir, "iflint")
+	binary = filepath.Join(dir, "ifttt")
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	args := []string{"build", "-o", binary}
-	if raw := os.Getenv("IFLINT_INTEGRATION_COVER_DIR"); raw != "" {
+	if raw := os.Getenv("IFTTT_INTEGRATION_COVER_DIR"); raw != "" {
 		integrationCoverDir, err = filepath.Abs(raw)
 		if err != nil {
 			panic(err)
@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 		}
 		args = append(args, "-cover", "-covermode=atomic", "-coverpkg=github.com/derhnyel/ifttt/...")
 	}
-	args = append(args, "./cmd")
+	args = append(args, "./cmd/ifttt")
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = "../.."
 	out, err := cmd.CombinedOutput()
@@ -72,14 +72,14 @@ func newDefaultRepo(t *testing.T) repo {
 	r := repo{dir: t.TempDir()}
 	isolated := t.TempDir()
 	for _, v := range os.Environ() {
-		if !strings.HasPrefix(v, "GIT_") && !strings.HasPrefix(v, "IFLINT_CACHE_DIR=") && !strings.HasPrefix(v, "XDG_CONFIG_HOME=") && !strings.HasPrefix(v, "GOCOVERDIR=") {
+		if !strings.HasPrefix(v, "GIT_") && !strings.HasPrefix(v, "IFTTT_CACHE_DIR=") && !strings.HasPrefix(v, "XDG_CONFIG_HOME=") && !strings.HasPrefix(v, "GOCOVERDIR=") {
 			r.env = append(r.env, v)
 		}
 	}
 	if integrationCoverDir != "" {
 		r.env = append(r.env, "GOCOVERDIR="+integrationCoverDir)
 	}
-	r.env = append(r.env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+filepath.Join(isolated, "gitconfig"), "IFLINT_CACHE_DIR="+filepath.Join(isolated, "cache"), "XDG_CONFIG_HOME="+isolated)
+	r.env = append(r.env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+filepath.Join(isolated, "gitconfig"), "IFTTT_CACHE_DIR="+filepath.Join(isolated, "cache"), "XDG_CONFIG_HOME="+isolated)
 	r.git(t, "init", "-q")
 	r.git(t, "config", "user.name", "Integration Test")
 	r.git(t, "config", "user.email", "integration@example.invalid")
@@ -471,6 +471,10 @@ func TestScaffoldRejectsInvalidContractsBeforeWrites(t *testing.T) {
 			r := newRepo(t)
 			r.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: "+tc.prefix+"\n")
 			r.write(t, "source.go", "existing content\n")
+			before, err := os.ReadDir(r.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
 			out, stderr, code := r.run(t, "", "scaffold", "--source", "source.go", "--target", tc.target, "--label", tc.label)
 			if code == 0 {
 				t.Fatalf("invalid contract accepted: stdout=%s stderr=%s", out, stderr)
@@ -479,9 +483,17 @@ func TestScaffoldRejectsInvalidContractsBeforeWrites(t *testing.T) {
 			if string(data) != "existing content\n" {
 				t.Fatalf("invalid contract mutated source: %s", data)
 			}
-			if tc.target != "./source.go" {
-				if _, err := os.Stat(filepath.Join(r.dir, tc.target)); !os.IsNotExist(err) {
-					t.Fatalf("invalid contract created target: %v", err)
+			// Inspect entries because invalid target names cannot be statted on Windows.
+			after, err := os.ReadDir(r.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != len(before) {
+				t.Fatalf("invalid contract changed directory entries: before=%v after=%v", before, after)
+			}
+			for i := range before {
+				if before[i].Name() != after[i].Name() {
+					t.Fatalf("invalid contract changed directory entries: before=%v after=%v", before, after)
 				}
 			}
 		})
@@ -801,7 +813,7 @@ func TestStructuredTargetAndFixWithApostrophePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(data, []byte("TODO(iflint)")) {
+	if !bytes.Contains(data, []byte("TODO(ifttt)")) {
 		t.Fatalf("apostrophe fix failed: %s", data)
 	}
 	requireCode(t, r, diff, 1, "--fix", "-")
@@ -1137,7 +1149,7 @@ func TestNativeRootPathsAcrossCommentFamilies(t *testing.T) {
 				if err := os.Mkdir(filepath.Join(r.dir, "lowercase"), 0700); err != nil {
 					t.Fatal(err)
 				}
-				name = filepath.Join("lowercase", "makefile")
+				name = "lowercase/makefile"
 			}
 			body := group.open + " LINT.IfChange(contract) " + group.close + "\nvalue = 1\n" + group.open + " LINT.ThenChange(//target.go:shared) " + group.close + "\n"
 			bodies[name] = body
@@ -1186,7 +1198,7 @@ func TestNativeGoTypeScriptMarkdownChainFromNestedDirectory(t *testing.T) {
 		if err := json.Unmarshal([]byte(output), &report); err != nil {
 			t.Fatal(err)
 		}
-		if len(report.Errors) != 1 || report.Errors[0].File != filepath.FromSlash(want) {
+		if len(report.Errors) != 1 || report.Errors[0].File != want {
 			t.Fatalf("expected exactly one finding in %s: %s", want, output)
 		}
 	}
@@ -1321,7 +1333,7 @@ func TestNativeReverseDiscoveryUsesOneNeedleQuery(t *testing.T) {
 			wrapper := t.TempDir()
 			log := filepath.Join(wrapper, "queries.log")
 			quote := func(text string) string { return "'" + strings.ReplaceAll(text, "'", "'\"'\"'") + "'" }
-			script := "#!/bin/sh\nif [ \"$1\" = grep ]; then printf '%s\\n' \"$*\" >> \"$IFLINT_GIT_QUERY_LOG\"; fi\nexec " + quote(realGit) + " \"$@\"\n"
+			script := "#!/bin/sh\nif [ \"$1\" = grep ]; then printf '%s\\n' \"$*\" >> \"$IFTTT_GIT_QUERY_LOG\"; fi\nexec " + quote(realGit) + " \"$@\"\n"
 			if err := os.WriteFile(filepath.Join(wrapper, "git"), []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -1331,7 +1343,7 @@ func TestNativeReverseDiscoveryUsesOneNeedleQuery(t *testing.T) {
 					env = append(env, entry)
 				}
 			}
-			r.env = append(env, "PATH="+wrapper+string(os.PathListSeparator)+os.Getenv("PATH"), "IFLINT_GIT_QUERY_LOG="+log)
+			r.env = append(env, "PATH="+wrapper+string(os.PathListSeparator)+os.Getenv("PATH"), "IFTTT_GIT_QUERY_LOG="+log)
 			output := requireCode(t, r, "", 1, "--vcs=git", "--format=json", "--ignore=ignored-source.go")
 			var result struct {
 				Errors []struct {
@@ -1396,7 +1408,7 @@ func TestLiteralStructuralSelectionAvoidsRepositoryEnumeration(t *testing.T) {
 	wrapper := t.TempDir()
 	log := filepath.Join(wrapper, "commands.log")
 	escaped := "'" + strings.ReplaceAll(realGit, "'", "'\"'\"'") + "'"
-	script := "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$IFLINT_GIT_QUERY_LOG\"\nexec " + escaped + " \"$@\"\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$IFTTT_GIT_QUERY_LOG\"\nexec " + escaped + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(wrapper, "git"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -1406,7 +1418,7 @@ func TestLiteralStructuralSelectionAvoidsRepositoryEnumeration(t *testing.T) {
 			env = append(env, entry)
 		}
 	}
-	r.env = append(env, "PATH="+wrapper+string(os.PathListSeparator)+os.Getenv("PATH"), "IFLINT_GIT_QUERY_LOG="+log)
+	r.env = append(env, "PATH="+wrapper+string(os.PathListSeparator)+os.Getenv("PATH"), "IFTTT_GIT_QUERY_LOG="+log)
 	for _, tc := range []struct {
 		name, selection string
 		enumerations    int

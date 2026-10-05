@@ -15,8 +15,8 @@
 *.vsix
 
 /build/
-/iflint
-/test/.iflint-smoke
+/ifttt
+/test/.ifttt-smoke
 /vscode-extension/dist/
 
 __pycache__/
@@ -24,9 +24,9 @@ __pycache__/
 
 # Local scratch space and accidentally generated documentation reports.
 /.local/
+/.playwright-mcp/
 /docs/benchmarks/
 /vscode-extension/LICENSE
-/vscode-extension/README.md
 
 # Agent plans and specs are local working notes, not public project docs.
 /docs/superpowers/

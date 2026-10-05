@@ -168,7 +168,7 @@ func prepare(ctx context.Context, manifest Manifest) ([]*snapshot, error) {
 			return nil, fmt.Errorf("repository %s changed paths: %w", repository.entry.Repo, err)
 		}
 		for _, item := range paths {
-			name := filepath.FromSlash(item.Path)
+			name := item.Path
 			change := changes[name]
 			if change == nil {
 				change = &core.FileChanges{File: name}

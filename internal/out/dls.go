@@ -71,7 +71,7 @@ func groupDiagnostics(fs []core.Finding, suppress bool) []dlsItem {
 			Message:    f.Message,
 			Severity:   severityToDLS(f.Severity),
 			Code:       f.RuleID,
-			Source:     "iflint",
+			Source:     "ifttt",
 			Summary:    f.Summary,
 			Resolution: f.Resolution,
 			HelpURL:    f.HelpURL,

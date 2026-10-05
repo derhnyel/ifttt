@@ -9,9 +9,9 @@ import (
 )
 
 func BenchmarkTrackedFileSelection(b *testing.B) {
-	root := os.Getenv("IFLINT_BENCHMARK_REPOSITORY")
+	root := os.Getenv("IFTTT_BENCHMARK_REPOSITORY")
 	if root == "" {
-		b.Skip("set IFLINT_BENCHMARK_REPOSITORY to an existing checkout")
+		b.Skip("set IFTTT_BENCHMARK_REPOSITORY to an existing checkout")
 	}
 	root, err := filepath.Abs(root)
 	if err != nil {

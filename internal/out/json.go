@@ -3,6 +3,7 @@ package out
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	core "github.com/derhnyel/ifttt/internal"
 )
@@ -35,6 +36,10 @@ func (w JSON) Write(fs []core.Finding, suppressed []core.Finding) error {
 	payload := map[string]any{"errors": toJSONFindings(fs)}
 	if w.IncludeWorkspaceRoot {
 		root, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		root, err = filepath.EvalSymlinks(root)
 		if err != nil {
 			return err
 		}

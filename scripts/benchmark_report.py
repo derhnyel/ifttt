@@ -36,10 +36,10 @@ def render(data):
             lines.append(f"| {result['workload']} / {mode} | {values} |")
     lines += ['', 'These measurements characterize these fixtures and this machine only. They do not establish universal performance or feature parity; different repository shapes, hardware, cache state, and rules can change the results. No conclusion is based on correctness-mismatched workloads.', '',
               'Reproduce from the repository root (supply a checksum-verified native upstream executable):', '',
-              '```sh', f'CGO_ENABLED={cgo} go build -trimpath -o build/iflint ./cmd',
+              '```sh', f'CGO_ENABLED={cgo} go build -trimpath -o build/ifttt ./cmd/ifttt',
               'python3 scripts/benchmark_upstream.py',
               'python3 -m unittest discover -s scripts -p "test_benchmark.py"',
-              'python3 scripts/benchmark.py --go build/iflint --upstream /path/to/ifttt-lint',
+              'python3 scripts/benchmark.py --go build/ifttt --upstream /path/to/ifttt-lint',
               'python3 scripts/benchmark_report.py build/benchmarks/comparison.json', '```', '']
     return '\n'.join(lines)
 

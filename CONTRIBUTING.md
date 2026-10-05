@@ -1,6 +1,6 @@
 # Contributing
 
-Report bugs with a minimal directive/diff example, the CLI version, expected behavior and actual output. For editor issues, include the VS Code version and relevant IFLint settings. Remove credentials and private paths from reports.
+Report bugs with a minimal directive/diff example, the CLI version, expected behavior and actual output. For editor issues, include the VS Code version and relevant IFTTT Lint settings. Remove credentials and private paths from reports.
 
 ## Local setup
 
@@ -8,13 +8,13 @@ Use the Go toolchain pinned in `go.mod`, Node.js 22+, Python 3.11+, Git and Bash
 
 ```sh
 make test-tools         # install pinned, checksum-verified jj for native tests
-make build             # build/iflint
+make build             # build/ifttt
 make check             # format, vet, race tests, CLI smoke, extension tests, audits and workflow lint
 ```
 
-For editor changes, run `make extension-host` to exercise an actual VS Code host with Git and jj. Set `IFLINT_VSCODE_BINARY` if VS Code is not discovered automatically; Linux needs a display or `xvfb-run`.
+For editor changes, run `make extension-host` to exercise an actual VS Code host with Git and jj. Set `IFTTT_VSCODE_BINARY` if VS Code is not discovered automatically; Linux needs a display or `xvfb-run`.
 
-Optional checks are `make coverage` and the workloads in [benchmarks](README.md#benchmarks-and-correctness). For local VSIX packaging, run `npm ci` and `npm run package:local` in `vscode-extension`. Public packaging and publication are described in [releasing](README.md#releases).
+Optional checks are `make coverage` and the workloads in [benchmarks](README.md#benchmarks-and-correctness). For local VSIX packaging, run `npm ci` and `npm run package:local` in `vscode-extension`.
 
 ## Pull requests
 

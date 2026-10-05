@@ -85,6 +85,10 @@ func TestLabelPlaceholderInsideExistingRangeAndIdempotent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0755); err != nil {
 		t.Fatal(err)
 	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 2; i++ {
 		if err := ensureLabelPlaceholder(path, "LBL"); err != nil {
 			t.Fatal(err)
@@ -95,14 +99,16 @@ func TestLabelPlaceholderInsideExistingRangeAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if strings.Count(text, "TODO(iflint)") != 1 || strings.Index(text, "TODO(iflint)") > strings.Index(text, "SENTRY.EndLabel") {
+	if strings.Count(text, "TODO(ifttt)") != 1 || strings.Index(text, "TODO(ifttt)") > strings.Index(text, "SENTRY.EndLabel") {
 		t.Fatalf("bad placeholder: %s", text)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0755 {
-		t.Fatalf("lost permissions: %v", info.Mode())
+	// Windows exposes writable files as 0666 even when created with 0755.
+	// The fix must preserve the permissions the filesystem actually supports.
+	if info.Mode().Perm() != before.Mode().Perm() {
+		t.Fatalf("lost permissions: %v -> %v", before.Mode(), info.Mode())
 	}
 }

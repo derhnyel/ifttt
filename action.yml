@@ -1,4 +1,4 @@
-name: iflint
+name: ifttt-lint-go
 description: Check cross-file directives in a unified diff or scan a workspace.
 inputs:
   change-set:
@@ -29,20 +29,20 @@ runs:
         go-version: ${{ inputs.go-version }}
         go-version-file: ${{ github.action_path }}/go.mod
         cache: false
-    - name: Build iflint from action source
+    - name: Build ifttt from action source
       shell: bash
       env:
         ACTION_ROOT: ${{ github.action_path }}
-        TOOL_BIN: ${{ runner.temp }}/iflint/bin
+        TOOL_BIN: ${{ runner.temp }}/ifttt/bin
       run: |
         set -euo pipefail
         mkdir -p "$TOOL_BIN"
         cd "$ACTION_ROOT"
         suffix=''
         if [ "$RUNNER_OS" = Windows ]; then suffix='.exe'; fi
-        go build -trimpath -o "$TOOL_BIN/iflint$suffix" ./cmd
+        go build -trimpath -o "$TOOL_BIN/ifttt$suffix" ./cmd/ifttt
         echo "$TOOL_BIN" >> "$GITHUB_PATH"
-    - name: Run iflint
+    - name: Run ifttt
       shell: bash
       env:
         CHANGE_SET_PATH: ${{ inputs.change-set }}
@@ -68,16 +68,16 @@ runs:
         EXTRA_ARGS="${EXTRA_ARGS//$'\n'/ }"
         read -r -a args <<< "$EXTRA_ARGS" || true
         if [ -n "$CHANGE_SET_PATH" ]; then
-          iflint --change-set "$CHANGE_SET_PATH" "${args[@]}" </dev/null
+          ifttt --change-set "$CHANGE_SET_PATH" "${args[@]}" </dev/null
         elif [ -n "$DIFF_PATH" ]; then
-          iflint --vcs git "${args[@]}" "$DIFF_PATH" </dev/null
+          ifttt --vcs git "${args[@]}" "$DIFF_PATH" </dev/null
         elif [ "$EVENT_NAME" = pull_request ]; then
           if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo 'PR checks require full base and head revision IDs.' >&2
             exit 2
           fi
           if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
-            echo 'Check out the PR head revision before running iflint (actions/checkout ref: github.event.pull_request.head.sha).' >&2
+            echo 'Check out the PR head revision before running ifttt (actions/checkout ref: github.event.pull_request.head.sha).' >&2
             exit 2
           fi
           git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
@@ -86,11 +86,11 @@ runs:
               git fetch --no-tags --unshallow origin
             fi
           fi
-          iflint --vcs git "${args[@]}" --diff "${BASE_SHA}...${HEAD_SHA}" </dev/null
+          ifttt --vcs git "${args[@]}" --diff "${BASE_SHA}...${HEAD_SHA}" </dev/null
         elif [ "$EVENT_NAME" = push ]; then
-          iflint --vcs git "${args[@]}" '**/*' </dev/null
+          ifttt --vcs git "${args[@]}" '**/*' </dev/null
         elif [ "${#args[@]}" -gt 0 ]; then
-          iflint --vcs git "${args[@]}" </dev/null
+          ifttt --vcs git "${args[@]}" </dev/null
         else
-          iflint --vcs git '**/*' </dev/null
+          ifttt --vcs git '**/*' </dev/null
         fi

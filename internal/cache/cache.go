@@ -12,7 +12,7 @@ import (
 )
 
 func dir() (string, error) {
-	root := os.Getenv("IFLINT_CACHE_DIR")
+	root := os.Getenv("IFTTT_CACHE_DIR")
 	if root != "" {
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return "", err
