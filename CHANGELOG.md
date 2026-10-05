@@ -1,0 +1,10 @@
+# Changelog
+
+## Unreleased
+
+- Move the Go module, CLI, tests and VS Code extension to the repository root; consolidate project documentation into README sections.
+- CLI with native Git/jj workflows, structural and co-change checks, conditional rules, JSON/SARIF/DLS reports, and explicit cross-repository snapshot validation.
+- VS Code diagnostics, navigation, scaffolding and fixes; snapshot reports remain read-only.
+- GitHub Action, pre-commit hooks, versioned release binaries and verified release assets.
+- Standard `LINT.IfChange` / `LINT.ThenChange` directive syntax.
+- GitHub Action checks require the selected PR head checkout and preserve multiline arguments. CI includes a required-status gate, dependency updates and issue/PR templates.

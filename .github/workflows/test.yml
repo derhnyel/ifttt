@@ -1,0 +1,135 @@
+name: Tests
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+        default: ''
+  push:
+    branches: ['**']
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+concurrency:
+  group: ci-tests-${{ github.event_name }}-${{ inputs.ref || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  go:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install pinned jj for native integration tests
+        shell: bash
+        run: |
+          python test/install-jj.py
+          echo "$GITHUB_WORKSPACE/build/tools" >> "$GITHUB_PATH"
+      - run: go test -race ./...
+      - name: CLI smoke test
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash test/smoke.sh
+      - name: Check out the action consumer revision
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Composite action smoke test
+        uses: ./
+        with:
+          args: --scan test/extension-playground
+          working-directory: .
+  automation:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+  extension:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode-extension
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install pinned jj for editor integration tests
+        run: |
+          python3 ../test/install-jj.py
+          echo "$GITHUB_WORKSPACE/build/tools" >> "$GITHUB_PATH"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm audit
+      - name: Package licensed VSIX
+        run: |
+          cp ../LICENSE LICENSE
+          npm run package:local
+      - name: Install checksum-verified VS Code test host
+        run: |
+          python3 ../test/install-vscode.py
+          sudo apt-get update
+          sudo apt-get install -y xvfb "$GITHUB_WORKSPACE/build/tools/vscode.deb"
+      - name: Actual VS Code host workflows (Git and jj)
+        env:
+          IFLINT_VSCODE_BINARY: /usr/share/code/code
+        run: |
+          xvfb-run -a python3 test/run-host.py
+          IFLINT_HOST_VCS=jj xvfb-run -a python3 test/run-host.py
+  ci:
+    name: CI
+    if: always()
+    needs: [go, automation, extension]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every test job to pass
+        env:
+          GO_RESULT: ${{ needs.go.result }}
+          AUTOMATION_RESULT: ${{ needs.automation.result }}
+          EXTENSION_RESULT: ${{ needs.extension.result }}
+        run: |
+          for result in "$GO_RESULT" "$AUTOMATION_RESULT" "$EXTENSION_RESULT"; do
+            test "$result" = success || exit 1
+          done

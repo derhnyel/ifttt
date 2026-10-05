@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose an improvement with a concrete use case.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Describe what you need to do and what the current behavior prevents.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include an example directive, command or editor workflow and any alternatives considered.
+    validations:
+      required: true

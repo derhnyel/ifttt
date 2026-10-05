@@ -1,0 +1,35 @@
+name: Bug report
+description: Report incorrect lint results, CLI failures or editor/Action issues.
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - CLI
+        - VS Code extension
+        - GitHub Action
+        - Cross-repository change sets
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and environment
+      description: Include iflint --version, OS, Git/jj version, and VS Code/extension or Action version when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include directives, relevant files/diff, configuration and the exact command or workflow. Remove credentials and private data.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+      description: Include the output or diagnostic and explain what you expected.
+    validations:
+      required: true
