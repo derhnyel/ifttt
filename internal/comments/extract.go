@@ -18,6 +18,7 @@ type Extractor func(path string, src string) []Block
 
 var registry = map[string]Extractor{}
 var literalExtractors = map[string]bool{}
+var pythonExtractors = map[string]bool{}
 var registryMu sync.RWMutex
 
 func RegisterLanguage(ext string, e Extractor) {
@@ -32,6 +33,7 @@ func registerLanguage(ext string, e Extractor, literal bool) {
 	registry[strings.ToLower(ext)] = e
 	literalExtractors[strings.ToLower(ext)] = literal
 	delete(commentFormats, strings.ToLower(ext))
+	delete(pythonExtractors, strings.ToLower(ext))
 }
 
 // RegisterLineComment registers a simple single-line comment extractor that strips the
@@ -112,6 +114,12 @@ func ExtractWithNeedle(path, needle string, loader func(string) ([]byte, error))
 }
 
 func extractWithLoader(path, needle string, loader func(string) ([]byte, error)) ([]Block, error) {
+	return ExtractWithSettings(path, needle, loader, nil)
+}
+
+// ExtractWithSettings scopes Python extraction to an immutable snapshot.
+// Explicit custom comment extractors retain precedence.
+func ExtractWithSettings(path, needle string, loader func(string) ([]byte, error), docstrings *bool) ([]Block, error) {
 	if loader == nil {
 		loader = os.ReadFile
 	}
@@ -123,9 +131,13 @@ func extractWithLoader(path, needle string, loader func(string) ([]byte, error))
 	registryMu.RLock()
 	e, ok := registry[ext]
 	literal := literalExtractors[ext]
+	pythonBuiltin := pythonExtractors[ext]
 	registryMu.RUnlock()
 	if needle != "" && (e == nil || literal) && !bytes.Contains(b, []byte(needle)) {
 		return nil, nil
+	}
+	if docstrings != nil && (pythonBuiltin || (!ok && (filepath.Base(path) == "BUILD" || filepath.Base(path) == "BUILD.bazel" || filepath.Base(path) == "WORKSPACE"))) {
+		return pythonWithDocstrings(string(b), *docstrings), nil
 	}
 	if ok && e != nil {
 		return e(path, string(b)), nil
@@ -148,6 +160,10 @@ func cFamily(path, src string) []Block {
 func hashOnly(path, src string) []Block { return lexComments(path, src, grammar{lines: []string{"#"}}) }
 
 func python(_ string, src string) []Block {
+	return pythonWithDocstrings(src, !pythonDocstringsDisabled.Load())
+}
+
+func pythonWithDocstrings(src string, docstrings bool) []Block {
 	var out []Block
 	line := 1
 	for i := 0; i < len(src); {
@@ -185,7 +201,7 @@ func python(_ string, src string) []Block {
 				}
 				j++
 			}
-			if !pythonDocstringsDisabled.Load() && triple && strings.TrimSpace(src[strings.LastIndex(src[:i], "\n")+1:i]) == "" {
+			if docstrings && triple && strings.TrimSpace(src[strings.LastIndex(src[:i], "\n")+1:i]) == "" {
 				out = append(out, Block{Start: line, Text: src[start:j]})
 			}
 			line += strings.Count(src[start:j], "\n")

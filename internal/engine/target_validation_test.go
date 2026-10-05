@@ -278,3 +278,18 @@ func TestDuplicateGoogleLabelCannotSatisfyReference(t *testing.T) {
 		t.Fatalf("ambiguous label satisfied reference: %+v", result.Findings)
 	}
 }
+
+func TestRemovedTargetMetadataUsesOwningPrefix(t *testing.T) {
+	for _, prefix := range []string{"LINT", "CUSTOM"} {
+		t.Run(prefix, func(t *testing.T) {
+			change := &core.FileChanges{DirectivePrefix: prefix, RemovedInNew: map[int]string{3: "// " + prefix + ".ThenChange()\n"}}
+			if blockChanged(change, 2, 2) {
+				t.Fatal("removed closing directive satisfied a labelled body dependency")
+			}
+			change.RemovedInNew[3] = "actual removed body\n"
+			if !blockChanged(change, 2, 2) {
+				t.Fatal("removed body change was discarded as metadata")
+			}
+		})
+	}
+}

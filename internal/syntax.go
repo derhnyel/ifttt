@@ -37,6 +37,15 @@ func SetDirectivePrefix(prefix string) {
 	syntaxMu.Unlock()
 }
 
+// NewDirectiveSyntax returns immutable parser tokens without changing process settings.
+func NewDirectiveSyntax(prefix string) DirectiveSyntax {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = DefaultDirectivePrefix
+	}
+	return makeSyntax(prefix)
+}
+
 func makeSyntax(prefix string) DirectiveSyntax {
 	prefixDot := prefix + "."
 	token := func(name string) string { return prefix + "." + name }

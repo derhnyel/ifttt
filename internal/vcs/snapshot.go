@@ -11,6 +11,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // SnapshotChange records tree changes independently of textual patch hunks.
@@ -25,16 +26,28 @@ type SnapshotChange struct {
 // discovery and Diff, ignores the working copy and uses --at-operation=@ to
 // reject divergent operation heads rather than automatically merging them.
 func OpenSnapshot(ctx context.Context, cwd, kind string) (*Backend, error) {
-	return openBackend(ctx, cwd, kind, true)
+	backend, err := openBackend(ctx, cwd, kind, true)
+	if err == nil {
+		backend.verifiedIDs = &sync.Map{}
+	}
+	return backend, err
 }
 
 // ResolveRevision pins a revision to exactly one immutable commit object ID.
 func (b *Backend) ResolveRevision(ctx context.Context, rev string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := validRevision(rev); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(rev) == "" {
 		return "", errors.New("snapshot revision must not be empty")
+	}
+	if b.verifiedIDs != nil {
+		if _, verified := b.verifiedIDs.Load(rev); verified {
+			return rev, nil
+		}
 	}
 	var out string
 	var err error
@@ -67,6 +80,9 @@ func (b *Backend) ResolveRevision(ctx context.Context, rev string) (string, erro
 		if err := snapshot.ensureGitRevisionUnambiguous(ctx, rev, out); err != nil {
 			return "", err
 		}
+	}
+	if b.verifiedIDs != nil {
+		b.verifiedIDs.Store(out, struct{}{})
 	}
 	return out, nil
 }

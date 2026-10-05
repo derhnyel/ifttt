@@ -24,27 +24,33 @@ import (
 // Public entrypoints
 
 type Options struct {
+	Syntax *core.DirectiveSyntax
+	// ConfigOverrides records explicit CLI policies for snapshot configuration.
+	ConfigOverrides map[string]bool
 	// RevisionChanges and ReverseCandidates describe an immutable source snapshot.
 	// RevisionChanges keys and FileChanges paths use repository forward slashes.
 	RevisionChanges   map[string]*core.FileChanges
 	ReverseCandidates []string
+	MatchCandidates   []string
 	// DependencyChanges supplies foreign changed-line evidence without adding sources.
-	DependencyChanges  func(string) (*core.FileChanges, error)
-	Repository         *vcs.Backend
-	StrictPaths        bool
-	Parallelism        int
-	Verbose            bool
-	Ignores            []string // file or file#label
-	CodeOnly           bool
-	UnknownPolicy      string // error|warn|ignore
-	SkipDirs           []string
-	Fix                bool
-	Files              FileProvider
-	Factories          []FileProviderFactory
-	CombinedDiffPolicy string
-	SuppressCoChanges  bool
-	SourceFiles        []string
-	StructuralFiles    []string
+	DependencyChanges func(string) (*core.FileChanges, error)
+	// DependencyConfigChanged requests structural revalidation, not co-change evidence.
+	DependencyConfigChanged func(string) bool
+	Repository              *vcs.Backend
+	StrictPaths             bool
+	Parallelism             int
+	Verbose                 bool
+	Ignores                 []string // file or file#label
+	CodeOnly                bool
+	UnknownPolicy           string // error|warn|ignore
+	SkipDirs                []string
+	Fix                     bool
+	Files                   FileProvider
+	Factories               []FileProviderFactory
+	CombinedDiffPolicy      string
+	SuppressCoChanges       bool
+	SourceFiles             []string
+	StructuralFiles         []string
 }
 
 const (
@@ -255,6 +261,7 @@ func Lint(diffText string, opts Options) (Result, int) {
 
 func LintReader(r io.Reader, opts Options) (Result, int) {
 	start := time.Now()
+	syn := opts.directiveSyntax()
 	files := opts.Files
 	if files == nil {
 		files = &workspaceFileProvider{root: "."}
@@ -324,7 +331,11 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 
 	// prepare ignores (compiled)
 	ign := compileIgnores(opts.Ignores)
+	// LINT.IfChange(target_exclusions)
 	ignored := func(tr core.TargetRef) bool {
+		if pathInSkippedDir(tr.Path, skipSet) {
+			return true
+		}
 		name := tr.Path
 		base := filepath.Base(name)
 		for _, p := range ign {
@@ -337,6 +348,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		}
 		return false
 	}
+	// LINT.ThenChange(//internal/engine/conditional_structure_test.go:conditional_target_structure)
 
 	// discover changed files we care about
 	var selected map[string]bool
@@ -357,6 +369,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		}
 	}
 	reverseCandidates := opts.ReverseCandidates
+	reverseDiscovered := false
 	if opts.Files == nil && needsReverseValidation(changes) {
 		var err error
 		repository := opts.Repository
@@ -365,13 +378,23 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 			repository, openErr = vcs.Open(context.Background(), ".", "auto")
 		}
 		if openErr == nil {
-			reverseCandidates, err = repository.DirectiveFiles(context.Background(), core.CurrentDirectiveSyntax().PrefixDot)
+			reverseCandidates, err = repository.DirectiveFilesWithBinary(context.Background(), syn.PrefixDot)
 		} else {
-			reverseCandidates, err = scan.FindDirectiveFiles(".", core.CurrentDirectiveSyntax().PrefixDot, workerLimit(opts.Parallelism), skipDirs)
+			reverseCandidates, err = scan.FindDirectiveFiles(".", syn.PrefixDot, workerLimit(opts.Parallelism), skipDirs)
 		}
 		if err != nil {
 			return Result{Findings: []core.Finding{errFinding(".", 1, err)}}, 1
 		}
+		reverseDiscovered = true
+	}
+
+	matchOpts := opts
+	if reverseDiscovered {
+		matchOpts.MatchCandidates = append([]string{}, reverseCandidates...)
+	}
+	candidates, matchErr := matchCandidates(matchOpts, skipDirs)
+	if matchErr != nil {
+		return Result{Findings: []core.Finding{errFinding(".", 1, matchErr)}}, 1
 	}
 
 	sort.Strings(changed)
@@ -401,7 +424,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		if err != nil {
 			return nil, &directiveReadError{err: err}
 		}
-		dirs, err := loadDirectives(provider, actual)
+		dirs, err := loadDirectives(provider, actual, syn)
 		mu.Lock()
 		dcache[path] = dirs
 		perr[path] = err
@@ -437,12 +460,13 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 					relevant = true
 				}
 				for _, raw := range targetsOf(d) {
-					target := resolveTarget(candidate, raw)
+					target := resolveTarget(candidate, raw, syn)
 					fc, lookupErr := dependencyChange(target.Path)
 					if lookupErr != nil && opts.RevisionChanges != nil {
 						return Result{Findings: []core.Finding{errFinding(candidate, d.Line, lookupErr)}}, 1
 					}
-					if fc != nil && (fc.Deleted || fc.Renamed || fc.TypeChanged || fc.Opaque || hasRemovedDirective(fc)) {
+					configurationChanged := opts.DependencyConfigChanged != nil && opts.DependencyConfigChanged(target.Path)
+					if configurationChanged || (fc != nil && (fc.Deleted || fc.Renamed || fc.TypeChanged || fc.Opaque || hasRemovedDirective(fc))) {
 						relevant = true
 						break
 					}
@@ -473,6 +497,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 
 	pairs := make([]pairInfo, 0, len(changed)*2)
 	var extraRules []conditionalRule
+	var matches []matchRule
 	suppressionDirs := make(map[string][]core.LintDirective)
 	findings := make([]core.Finding, 0, len(changed))
 	needsLabelInfo := make(map[string]bool)
@@ -505,7 +530,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 			if fc := changes[src]; opts.RevisionChanges == nil && fc != nil && !fc.HasDirectiveHint {
 				val, ok := presenceCache[src]
 				if !ok {
-					val = fileContainsDirective(files, opts.Factories, src)
+					val = fileContainsDirective(files, opts.Factories, src, syn)
 					presenceCache[src] = val
 				}
 				if !val {
@@ -521,6 +546,30 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		if err != nil {
 			emit(errFinding(src, 1, err))
 			continue
+		}
+		if change := changes[src]; change != nil && change.RemovedInNew != nil {
+			for _, directive := range dirs {
+				if directive.Kind == core.IfChange && change.AddedLines[directive.Line] {
+					provider, actual, readErr := fileProviderForPath(files, opts.Factories, src)
+					var data []byte
+					if readErr == nil {
+						data, readErr = provider.ReadFile(actual)
+					}
+					if readErr != nil {
+						emit(errFinding(src, directive.Line, readErr))
+						break
+					}
+					classified := *change
+					classified.ExistingGuards = existingGuards(data, dirs, change, parserSettingsWithSyntax(provider, syn))
+					changes[src] = &classified
+					break
+				}
+			}
+		}
+		for _, directive := range dirs {
+			if directive.Kind == core.Match {
+				matches = append(matches, matchRule{src: src, directive: directive})
+			}
 		}
 		if change := changes[src]; change != nil && change.Opaque {
 			for _, directive := range dirs {
@@ -573,22 +622,24 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 				}
 				block := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
-				if emptyGoogleBlock(block.directive, d) {
+				if emptyGoogleBlock(block.directive, d, syn) {
 					localFindings = append(localFindings, finding("empty_then", src, d.Line, "empty LINT.ThenChange() on unlabeled IfChange has no effect"))
 				}
 				for _, index := range block.rules {
 					extraRules[index].thenLine = d.Line
 				}
 				for _, raw := range targetsOf(d) {
-					if invalidGoogleDriveTarget(raw) {
+					if invalidGoogleDriveTarget(raw, syn) {
 						localFindings = append(localFindings, finding("invalid_target_path", src, d.Line, "absolute filesystem drive paths are not supported for LINT targets"))
 						continue
 					}
-					if opts.StrictPaths && core.CurrentDirectiveSyntax().Prefix == "LINT" && !(opts.DependencyChanges != nil && isRemotePath(raw)) && !strings.HasPrefix(raw, "//") && !strings.HasPrefix(raw, ":") && !strings.HasPrefix(raw, "#") {
+					// LINT.IfChange(strict_remote_paths)
+					if opts.StrictPaths && syn.Prefix == "LINT" && !isRemotePath(raw) && !strings.HasPrefix(raw, "//") && !strings.HasPrefix(raw, ":") && !strings.HasPrefix(raw, "#") {
 						localFindings = append(localFindings, finding("invalid_target_path", src, d.Line, "strict LINT targets must start with // or use a same-file label selector"))
 						continue
 					}
-					tr := resolveTarget(src, raw)
+					// LINT.ThenChange(//test/integration/default_syntax_test.go:strict_remote_paths)
+					tr := resolveTarget(src, raw, syn)
 					if pathInSkippedDir(tr.Path, skipSet) {
 						continue
 					}
@@ -623,7 +674,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 	}
 	for _, rule := range extraRules {
 		for _, raw := range targetsOf(rule.directive) {
-			tr := resolveTarget(rule.src, raw)
+			tr := resolveTarget(rule.src, raw, syn)
 			if ignored(tr) {
 				continue
 			}
@@ -664,7 +715,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		collectIgnores(fileIgnores, tf, dirs)
 		_, alreadyValidated := suppressionDirs[tf]
 		suppressionDirs[tf] = dirs
-		targetFindings, _ := validateTargetDirectives(tf, dirs, opts.UnknownPolicy)
+		targetFindings, _ := validateTargetDirectives(tf, dirs, targetPolicy(files, opts.Factories, tf, opts.UnknownPolicy), targetSyntax(files, opts.Factories, tf, syn))
 		if !alreadyValidated {
 			for _, f := range targetFindings {
 				emit(f)
@@ -756,19 +807,82 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		wg.Wait()
 	}
 
+	// LINT.IfChange(conditional_target_structure)
 	for _, rule := range extraRules {
-		if opts.SuppressCoChanges || (selected != nil && !selected[rule.src]) {
+		// Structural references remain valid even when edit checks are suppressed.
+		evaluateConditionalRule(rule, changes, labelRanges, files, opts.Factories, opts.CodeOnly, ignored, emit, dependencyChange, syn,
+			opts.SuppressCoChanges || (selected != nil && !selected[rule.src]))
+	}
+	// LINT.ThenChange(//internal/engine/rules.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure)
+	// Needle mentions in strings, prose or fences are not active contracts.
+	// Discovery-only sources contribute Match rules, not unrelated edit checks.
+	processed := make(map[string]bool, len(changed))
+	for _, path := range changed {
+		processed[path] = true
+	}
+	for _, candidate := range candidates {
+		candidate = filepath.ToSlash(filepath.Clean(candidate))
+		if processed[candidate] || pathInSkippedDir(candidate, skipSet) || matchAnyFile(candidate, ign) || (selected != nil && !selected[candidate]) {
 			continue
 		}
-		evaluateConditionalRule(rule, changes, labelRanges, files, opts.Factories, opts.CodeOnly, ignored, emit, dependencyChange)
+		processed[candidate] = true
+		dirs, err := getDirs(candidate)
+		var found []matchRule
+		for _, directive := range dirs {
+			if directive.Kind == core.Match {
+				found = append(found, matchRule{src: candidate, directive: directive})
+			}
+		}
+		if len(found) == 0 {
+			continue
+		}
+		if err != nil {
+			emit(errFinding(candidate, 1, err))
+			continue
+		}
+		collectIgnores(fileIgnores, candidate, dirs)
+		suppressionDirs[candidate] = dirs
+		matches = append(matches, found...)
+	}
+	// Referenced Match sections follow the same warning/suppression policies.
+	matchDirs := func(path string) ([]core.LintDirective, error) {
+		dirs, err := getDirs(path)
+		if err == nil {
+			collectIgnores(fileIgnores, path, dirs)
+			suppressionDirs[path] = dirs
+		}
+		return dirs, err
+	}
+	type matchFindingKey struct {
+		file, rule, message string
+		line                int
+	}
+	seenFindings := map[matchFindingKey]bool{}
+	key := func(f core.Finding) matchFindingKey { return matchFindingKey{f.File, f.RuleID, f.Message, f.Line} }
+	for _, f := range findings {
+		seenFindings[key(f)] = true
+	}
+	for _, f := range suppressed {
+		seenFindings[key(f)] = true
+	}
+	matchEmit := func(f core.Finding) {
+		k := key(f)
+		if !seenFindings[k] {
+			seenFindings[k] = true
+			emit(f)
+		}
+	}
+	for _, rule := range matches {
+		evaluateMatch(rule, opts, files, matchDirs, ignored, matchEmit)
 	}
 	sortFindings(findings)
 	sortFindings(suppressed)
 
 	// stats
 	stats := map[string]any{
-		"pre_ms": pre.Milliseconds(),
-		"files":  len(changed),
+		"pre_ms":      pre.Milliseconds(),
+		"files":       len(changed),
+		"match_rules": len(matches),
 	}
 	if combinedStatus != "" {
 		stats["combined_diff"] = combinedStatus
@@ -807,8 +921,9 @@ func compileIgnores(list []string) []core.IgnorePattern {
 
 // Directives are memoized within each lint invocation. Reading current content
 // avoids stale stat-only cache hits and unbounded background cache state in watch.
-func loadDirectives(provider FileProvider, actualPath string) ([]core.LintDirective, error) {
-	pf := parse.Provider{ReadFile: func(string) ([]byte, error) {
+func loadDirectives(provider FileProvider, actualPath string, syntax ...core.DirectiveSyntax) ([]core.LintDirective, error) {
+	settings := parserSettingsWithSyntax(provider, syntaxOrDefault(syntax...))
+	pf := parse.Provider{Settings: settings, ReadFile: func(string) ([]byte, error) {
 		data, err := provider.ReadFile(actualPath)
 		if err != nil {
 			return nil, &directiveReadError{err: err}
@@ -818,8 +933,8 @@ func loadDirectives(provider FileProvider, actualPath string) ([]core.LintDirect
 	return pf.Parse(actualPath)
 }
 
-func fileContainsDirective(files FileProvider, factories []FileProviderFactory, path string) bool {
-	syn := core.CurrentDirectiveSyntax()
+func fileContainsDirective(files FileProvider, factories []FileProviderFactory, path string, syntax ...core.DirectiveSyntax) bool {
+	syn := syntaxOrDefault(syntax...)
 	provider, actual, err := fileProviderForPath(files, factories, path)
 	if err != nil {
 		return false
@@ -1000,18 +1115,19 @@ func ResolveTarget(src, raw string) core.TargetRef {
 	return resolveTarget(src, raw)
 }
 
-func resolveTarget(src, raw string) core.TargetRef {
+func resolveTarget(src, raw string, syntax ...core.DirectiveSyntax) core.TargetRef {
+	syn := syntaxOrDefault(syntax...)
 	name := raw
 	lbl := ""
 	if i := strings.IndexByte(raw, '#'); i >= 0 {
 		name, lbl = raw[:i], raw[i+1:]
-	} else if core.CurrentDirectiveSyntax().Prefix == "LINT" && !isRemotePath(raw) {
+	} else if syn.Prefix == "LINT" && !isRemotePath(raw) {
 		if i := strings.LastIndexByte(raw, ':'); i > strings.LastIndexAny(raw, `/\`) && !(i == 1 && len(raw) > 2 && (raw[2] == '/' || raw[2] == '\\')) {
 			name, lbl = raw[:i], raw[i+1:]
 		}
 	}
-	googleLocal := core.CurrentDirectiveSyntax().Prefix == "LINT" && !isRemotePath(name)
-	driveAbsolute := invalidGoogleDriveTarget(name)
+	googleLocal := syn.Prefix == "LINT" && !isRemotePath(name)
+	driveAbsolute := invalidGoogleDriveTarget(name, syn)
 	normalized := strings.ReplaceAll(name, `\`, "/")
 	explicitRelative := strings.HasPrefix(normalized, "./") || strings.HasPrefix(normalized, "../")
 	rootRelative := googleLocal && !driveAbsolute && (strings.HasPrefix(name, "/") || (strings.ContainsAny(name, `/\`) && !explicitRelative && !filepath.IsAbs(name)))
@@ -1207,7 +1323,8 @@ func convertCombinedContent(line string, parents int) []string {
 // Referenced files need structural validation even when absent from the diff.
 // Unknown directive policy controls diagnostics; ambiguous contract ranges are
 // withheld so duplicate or incomplete labels cannot satisfy a dependency.
-func validateTargetDirectives(path string, dirs []core.LintDirective, policy string) ([]core.Finding, bool) {
+func validateTargetDirectives(path string, dirs []core.LintDirective, policy string, syntax ...core.DirectiveSyntax) ([]core.Finding, bool) {
+	syn := syntaxOrDefault(syntax...)
 	findings := validateUniqueness(dirs, path)
 	valid := len(findings) == 0
 	var stack []core.LintDirective
@@ -1217,11 +1334,16 @@ func validateTargetDirectives(path string, dirs []core.LintDirective, policy str
 			if f, ok := unknownFinding(path, d, policy); ok {
 				findings = append(findings, f)
 			}
+		case core.Match:
+			if d.Error != "" {
+				findings = append(findings, finding("match_invalid", path, d.Line, d.Error))
+				valid = false
+			}
 		case core.IfChange:
 			stack = append(stack, d)
 		case core.ThenChange:
 			for _, raw := range targetsOf(d) {
-				if invalidGoogleDriveTarget(raw) {
+				if invalidGoogleDriveTarget(raw, syn) {
 					findings = append(findings, finding("invalid_target_path", path, d.Line, "absolute filesystem drive paths are not supported for LINT targets"))
 					valid = false
 				}
@@ -1230,7 +1352,7 @@ func validateTargetDirectives(path string, dirs []core.LintDirective, policy str
 				findings = append(findings, finding("orphan_then", path, d.Line, fmt.Sprintf("ThenChange '%s' without preceding IfChange", oneOr(d))))
 				valid = false
 			} else {
-				if emptyGoogleBlock(stack[len(stack)-1], d) {
+				if emptyGoogleBlock(stack[len(stack)-1], d, syn) {
 					findings = append(findings, finding("empty_then", path, d.Line, "empty LINT.ThenChange() on unlabeled IfChange has no effect"))
 					valid = false
 				}
@@ -1412,15 +1534,25 @@ func evalThenChange(p pairInfo, src, tgt *core.FileChanges, labelMap map[string]
 	return false
 }
 
+// LINT.IfChange(replaced_block)
 func pairTriggered(p pairInfo, src *core.FileChanges, codeOnly bool) bool {
+	// ExistingGuards uses source-owned parser settings and body correspondence.
+	// A renamed guard keeps its dependency when a new neighbouring block is added.
 	if src == nil || src.Deleted || p.thenLine <= p.ifLine {
 		return false
 	}
 	if src.AddedLines[p.ifLine] && src.AddedLines[p.thenLine] {
+		if src.ExistingGuards == nil {
+			return false
+		}
+	}
+	if src.ExistingGuards != nil && src.AddedLines[p.ifLine] && !src.ExistingGuards[p.ifLine] {
 		return false
 	}
 	return blockChanged(src, p.ifLine+1, p.thenLine-1) && (!codeOnly || !onlyCommentChanges(src, p.ifLine+1, p.thenLine-1))
 }
+
+// LINT.ThenChange(//test/integration/default_syntax_test.go:replaced_block)
 
 func onlyCommentChanges(fc *core.FileChanges, start, end int) bool {
 	if fc == nil {
@@ -1479,7 +1611,7 @@ func blockChanged(fc *core.FileChanges, start, end int) bool {
 		for line, text := range fc.RemovedInNew {
 			if line >= start && line <= end+1 {
 				for _, removed := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
-					if !isDirectiveMetadataLine(removed) {
+					if !isDirectiveMetadataLineForPrefix(removed, fc.DirectivePrefix) {
 						return true
 					}
 				}
@@ -1503,10 +1635,18 @@ func ValidateFiles(paths []string, opts Options) (Result, int) {
 }
 
 func isDirectiveMetadataLine(text string) bool {
+	return isDirectiveMetadataLineForPrefix(text, "")
+}
+
+func isDirectiveMetadataLineForPrefix(text, directivePrefix string) bool {
+	prefixDot := directivePrefix + "."
+	if directivePrefix == "" {
+		prefixDot = core.CurrentDirectiveSyntax().PrefixDot
+	}
 	text = strings.TrimSpace(text)
 	for _, prefix := range []string{"//", "#", "--", "/*", "*", "<!--"} {
 		if strings.HasPrefix(text, prefix) {
-			return strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(text, prefix)), core.CurrentDirectiveSyntax().PrefixDot)
+			return strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(text, prefix)), prefixDot)
 		}
 	}
 	return false

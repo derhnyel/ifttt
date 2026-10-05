@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -70,6 +71,36 @@ type Remote struct {
 	DefaultRef string `yaml:"default_ref"`
 	TokenEnv   string `yaml:"token_env"`
 	BaseURL    string `yaml:"base_url"`
+}
+
+// Decode validates one repository-root configuration without filesystem access.
+// A missing committed configuration uses the same defaults as a local run.
+func Decode(data []byte, repositoryRoot ...string) (Config, error) {
+	var cfg Config
+	if len(data) > 1<<20 {
+		return cfg, errors.New("configuration exceeds 1 MiB")
+	}
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+		return cfg, err
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return cfg, err
+		}
+		return cfg, errors.New("configuration must contain one YAML document")
+	}
+	root := "."
+	if len(repositoryRoot) > 0 {
+		root = repositoryRoot[0]
+	}
+	cfg = normalizeLayer(cfg, root, root)
+	cfg.BaseDir = root
+	if err := Validate(&cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }
 
 func Load(repoRoot string) (Config, error) {
@@ -286,7 +317,7 @@ func normalizeIgnores(entries []string, cfgDir, rootDir string) []string {
 
 func relativize(value, cfgDir, rootDir string) string {
 	value = strings.TrimSpace(value)
-	if value == "" {
+	if value == "" || strings.Contains(value, "://") {
 		return value
 	}
 	var abs string
