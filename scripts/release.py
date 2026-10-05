@@ -47,7 +47,7 @@ def release_notes(root, repository, tag):
             '## Downloads\n\nLinux, macOS and Windows binaries for amd64 and arm64, '
             'plus a VS Code `.vsix`. Verify downloads against `SHA256SUMS`.\n\n'
             f'## GitHub Action\n\nUse `{repository}@{tag}` in your workflow. '
-            f'[Usage](https://github.com/{repository}/blob/{tag}/README.md#github-action).\n\n'
+            f'[Usage](https://github.com/{repository}/blob/{tag}/README.md#github-action-and-hooks).\n\n'
             f'[VS Code installation](https://github.com/{repository}/blob/{tag}/vscode-extension/README.md#install).\n')
 
 

@@ -201,6 +201,7 @@ class ReleaseNotesTests(unittest.TestCase):
             notes = release.release_notes(root, 'acme/ifttt', 'v1.2.3')
             self.assertIn('- Fix linked edits.', notes)
             self.assertIn('acme/ifttt@v1.2.3', notes)
+            self.assertIn('https://github.com/acme/ifttt/blob/v1.2.3/README.md#github-action-and-hooks', notes)
             self.assertIn('SHA256SUMS', notes)
             self.assertNotIn('Future work', notes)
             self.assertNotIn('Older change', notes)
