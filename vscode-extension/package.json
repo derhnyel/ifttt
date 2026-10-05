@@ -167,7 +167,7 @@
     "package:local": "vsce package --no-dependencies --allow-missing-repository --skip-license"
   },
   "devDependencies": {
-    "@types/node": "^20.12.7",
+    "@types/node": "^26.6.4",
     "@types/vscode": "^1.88.0",
     "@vscode/vsce": "^4.0.0",
     "typescript": "^5.4.2"
