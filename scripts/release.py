@@ -25,6 +25,72 @@ def validate_identity(repository, tag, commit=None):
         raise ValueError('release commit must be a full 40-character commit ID')
 
 
+# LINT.IfChange(release_notes)
+def changelog_section(root, tag):
+    version = tag[1:].split('-')[0]
+    content = (root / 'CHANGELOG.md').read_text()
+    headings = list(re.finditer(r'^## (.+)$', content, re.MULTILINE))
+    selected = [i for i, match in enumerate(headings) if match[1].split(' ')[0] == version]
+    if len(selected) != 1:
+        raise ValueError('changelog must contain exactly one section for the release version')
+    index = selected[0]
+    end = headings[index+1].start() if index+1 < len(headings) else len(content)
+    body = content[headings[index].end():end].strip()
+    if not body or not re.search(r'^[-*] \S', body, re.MULTILINE):
+        raise ValueError('release changelog section must contain release notes')
+    return body
+
+
+def release_notes(root, repository, tag):
+    validate_identity(repository, tag)
+    return (f'## Changes\n\n{changelog_section(root, tag)}\n\n'
+            '## Downloads\n\nLinux, macOS and Windows binaries for amd64 and arm64, '
+            'plus a VS Code `.vsix`. Verify downloads against `SHA256SUMS`.\n\n'
+            f'## GitHub Action\n\nUse `{repository}@{tag}` in your workflow. '
+            f'[Usage](https://github.com/{repository}/blob/{tag}/README.md#github-action-and-hooks).\n\n'
+            f'[VS Code installation](https://github.com/{repository}/blob/{tag}/vscode-extension/README.md#install).\n')
+
+
+def is_release_commit(pulls, commit, default_branch):
+    return any(pull.get('merged_at') and pull.get('merge_commit_sha') == commit
+               and pull.get('base', {}).get('ref') == default_branch
+               and any(label.get('name') == 'release' for label in pull.get('labels', []))
+               for pull in pulls)
+
+
+def ensure_tag(repository, tag, commit):
+    validate_identity(repository, tag, commit)
+    try:
+        existing = tag_commit(repository, tag)
+    except subprocess.CalledProcessError as error:
+        if 'http 404' not in error.stderr.lower():
+            raise
+        gh(['api', '--method', 'POST', f'repos/{repository}/git/refs',
+            '-f', f'ref=refs/tags/{tag}', '-f', f'sha={commit}'])
+        existing = tag_commit(repository, tag)
+    if existing != commit:
+        raise ValueError('release tags are immutable; selected tag points at a different commit')
+
+
+def prepared_run(repository, tag, commit):
+    validate_identity(repository, tag, commit)
+    existing = get_release(repository, tag)
+    ensure_release_identity(existing, tag, commit)
+    markers = re.findall(r'^<!-- ifttt-release-run: ([1-9][0-9]*) -->$', existing.get('body', ''), re.MULTILINE)
+    if len(markers) != 1:
+        raise ValueError('release must identify exactly one original verified CI run')
+    run_id = int(markers[0])
+    run = json.loads(gh(['api', f'repos/{repository}/actions/runs/{run_id}']))
+    if run.get('path', '').split('@')[0] != '.github/workflows/release.yml':
+        raise ValueError('original artifact must come from the Release workflow')
+    jobs = json.loads(gh(['api', f'repos/{repository}/actions/runs/{run_id}/jobs?per_page=100']))
+    if not any(job.get('name') == 'draft' and job.get('conclusion') == 'success' for job in jobs.get('jobs', [])):
+        raise ValueError('original CI run did not pass the draft gate')
+    return run_id
+
+# LINT.ThenChange(//scripts/test_release.py:release_notes)
+
+
 def check_metadata(root, repository, tag):
     validate_identity(repository, tag)
     package = json.loads((root / 'vscode-extension/package.json').read_text())
@@ -142,7 +208,7 @@ def tag_commit(repository, tag):
 
 def get_release(repository, tag):
     try:
-        return json.loads(gh(['release','view',tag,'--repo',repository,'--json','isDraft,targetCommitish,tagName']))
+        return json.loads(gh(['release','view',tag,'--repo',repository,'--json','isDraft,targetCommitish,tagName,body']))
     except subprocess.CalledProcessError as error:
         if 'release not found' in error.stderr.lower() or 'http 404' in error.stderr.lower(): return None
         raise
@@ -153,7 +219,7 @@ def ensure_release_identity(existing, tag, commit):
         raise ValueError('GitHub release does not match the selected tag and commit')
 
 
-def create_draft(directory, repository, tag, commit):
+def create_draft(directory, repository, tag, commit, notes=None, run_id=None):
     validate_identity(repository, tag, commit)
     assets = verify_assets(directory, require_vsix=True)
     if tag_commit(repository, tag) != commit: raise ValueError('remote tag no longer matches the selected commit')
@@ -161,9 +227,21 @@ def create_draft(directory, repository, tag, commit):
     if existing:
         ensure_release_identity(existing, tag, commit)
         if not existing.get('isDraft'): raise ValueError('cannot overwrite a published release')
-        gh(['release','upload',tag,'--repo',repository,'--clobber',*[str(p) for p in assets]])
-    else:
-        gh(['release','create',tag,'--repo',repository,'--draft','--verify-tag','--target',commit,'--title',tag,'--generate-notes',*[str(p) for p in assets]])
+    body = notes if notes is not None else release_notes(ROOT, repository, tag)
+    if run_id is not None:
+        if run_id <= 0: raise ValueError('CI run ID must be positive')
+        body += f'\n<!-- ifttt-release-run: {run_id} -->\n'
+    with tempfile.TemporaryDirectory(prefix='ifttt-release-notes-') as temporary:
+        path = Path(temporary) / 'notes.md'
+        path.write_text(body)
+        if existing:
+            gh(['release','upload',tag,'--repo',repository,'--clobber',*[str(p) for p in assets]])
+            gh(['release','edit',tag,'--repo',repository,'--tag',tag,'--target',commit,
+                '--draft=true','--notes-file',str(path)])
+        else:
+            gh(['release','create',tag,'--repo',repository,'--draft','--verify-tag','--target',commit,
+                '--title',f'IFTTT Lint {tag}','--prerelease=' + str('-' in tag).lower(),
+                '--notes-file',str(path),*[str(p) for p in assets]])
 
 
 def publish(directory, repository, tag, commit, package):
@@ -174,25 +252,40 @@ def publish(directory, repository, tag, commit, package):
     ensure_release_identity(existing, tag, commit)
     if existing.get('isDraft'):
         prerelease = '-' in tag
-        gh(['release','edit',tag,'--repo',repository,'--draft=false',f'--prerelease={str(prerelease).lower()}',f'--latest={str(not prerelease).lower()}'])
+        gh(['release','edit',tag,'--repo',repository,'--tag',tag,'--target',commit,'--draft=false',f'--prerelease={str(prerelease).lower()}',f'--latest={str(not prerelease).lower()}'])
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['check','seal','verify','draft','publish'])
+    parser.add_argument('operation', choices=['check','seal','verify','draft','publish','tag','notes','select','prepared-run'])
     parser.add_argument('--repository')
     parser.add_argument('--tag')
     parser.add_argument('--commit')
     parser.add_argument('--assets', type=Path, default=ROOT/'build/release')
     parser.add_argument('--require-vsix', action='store_true')
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--default-branch', default='main')
+    parser.add_argument('--prepared', type=Path)
+    parser.add_argument('--run-id', type=int)
     args = parser.parse_args()
     try:
         package = None
-        if args.operation in ('check','draft','publish') or (args.operation == 'verify' and args.repository):
+        if args.operation in ('check','draft','publish','notes') or (args.operation == 'verify' and args.repository):
             if not args.repository or not args.tag: raise ValueError('--repository and --tag are required')
             package = check_metadata(ROOT, args.repository, args.tag)
-        if args.operation == 'seal': seal_assets(args.assets)
+        if args.operation == 'prepared-run':
+            print(prepared_run(args.repository, args.tag, args.commit))
+        elif args.operation == 'select':
+            validate_identity(args.repository, 'v0.0.0', args.commit)
+            pulls = json.loads(gh(['api', f'repos/{args.repository}/commits/{args.commit}/pulls']))
+            print('true' if is_release_commit(pulls, args.commit, args.default_branch) else 'false')
+        elif args.operation == 'tag':
+            ensure_tag(args.repository, args.tag, args.commit)
+        elif args.operation == 'notes':
+            print(release_notes(ROOT, args.repository, args.tag), end='')
+        elif args.operation == 'check':
+            changelog_section(ROOT, args.tag)
+        elif args.operation == 'seal': seal_assets(args.assets)
         elif args.operation == 'verify':
             verify_assets(args.assets,args.require_vsix,package)
             if args.smoke:
@@ -201,9 +294,14 @@ def main():
         elif args.operation in ('draft','publish'):
             if not args.commit: raise ValueError('--commit is required')
             verify_assets(args.assets,True,package)
-            smoke_native(args.assets,args.tag,args.commit)
-            if args.operation == 'draft': create_draft(args.assets,args.repository,args.tag,args.commit)
-            else: publish(args.assets,args.repository,args.tag,args.commit,package)
+            if args.operation == 'draft': create_draft(args.assets,args.repository,args.tag,args.commit,
+                                                        release_notes(ROOT,args.repository,args.tag),args.run_id)
+            else:
+                if args.prepared is None: raise ValueError('publication requires the original CI artifact via --prepared')
+                verify_assets(args.prepared,True,package)
+                if (args.assets/'SHA256SUMS').read_bytes() != (args.prepared/'SHA256SUMS').read_bytes():
+                    raise ValueError('draft assets do not match the original verified CI artifact')
+                publish(args.assets,args.repository,args.tag,args.commit,package)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         parser.exit(1, f'release: {error}\n')
 

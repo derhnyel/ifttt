@@ -11,7 +11,15 @@ import (
 	"github.com/derhnyel/ifttt/internal/comments"
 )
 
+// Settings belongs to one source snapshot; nil settings preserve CLI defaults.
+type Settings struct {
+	Syntax           ifttt.DirectiveSyntax
+	PythonDocstrings *bool
+	UnknownPolicy    string
+}
+
 type Provider struct {
+	Settings *Settings
 	ReadFile func(string) ([]byte, error)
 }
 
@@ -23,8 +31,15 @@ func (p Provider) readFile() func(string) ([]byte, error) {
 }
 
 func (p Provider) Parse(path string) ([]ifttt.LintDirective, error) {
-	syn := ifttt.CurrentDirectiveSyntax()
-	blocks, err := comments.ExtractWithNeedle(path, syn.PrefixDot, p.readFile())
+	var syn ifttt.DirectiveSyntax
+	var docstrings *bool
+	if p.Settings != nil {
+		syn = p.Settings.Syntax
+		docstrings = p.Settings.PythonDocstrings
+	} else {
+		syn = ifttt.CurrentDirectiveSyntax()
+	}
+	blocks, err := comments.ExtractWithSettings(path, syn.PrefixDot, p.readFile(), docstrings)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +132,13 @@ func (p Provider) Parse(path string) ([]ifttt.LintDirective, error) {
 		}
 		if d.Kind == ifttt.EndLabel {
 			if len(stack) == 0 {
-				return nil, fmt.Errorf("unmatched EndLabel at %s:%d", filepath.Base(path), d.Line)
+				return dirs, fmt.Errorf("unmatched EndLabel at %s:%d", filepath.Base(path), d.Line)
 			}
 			stack = stack[:len(stack)-1]
 		}
 	}
 	if len(stack) > 0 {
-		return nil, fmt.Errorf("unclosed Label '%s' at %s:%d", stack[len(stack)-1].name, filepath.Base(path), stack[len(stack)-1].line)
+		return dirs, fmt.Errorf("unclosed Label '%s' at %s:%d", stack[len(stack)-1].name, filepath.Base(path), stack[len(stack)-1].line)
 	}
 	return dirs, nil
 }
@@ -219,6 +234,11 @@ func parseGoogle(text string, line int) ifttt.LintDirective {
 func parseSentry(text string, line int, prefix string) ifttt.LintDirective {
 	bad := func() ifttt.LintDirective { return unknown(text, line, "malformed or unknown directive") }
 	body := strings.TrimPrefix(text, prefix)
+	// LINT.IfChange(match_dispatch)
+	if strings.TrimSpace(strings.SplitN(body, "(", 2)[0]) == "Match" {
+		return parseMatch(body, line)
+	}
+	// LINT.ThenChange(//internal/parse/match.go:match_contract, //internal/parse/match_test.go:match_parser_tests)
 	if body == "IfChange" {
 		return ifttt.LintDirective{Kind: ifttt.IfChange, Line: line}
 	}

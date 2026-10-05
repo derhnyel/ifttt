@@ -1,13 +1,24 @@
-name: Prepare Release
+name: Release
 on:
   push:
     tags: ['v*']
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag (vMAJOR.MINOR.PATCH)
-        required: true
+        description: Existing tag to rebuild, or leave empty to release the committed version on main
+        required: false
         type: string
+      publish:
+        description: Publish after all checks and the release environment approval
+        required: true
+        default: true
+        type: boolean
+      marketplace:
+        description: Also publish VS Code extension (requires VSCE_PAT; stable only)
+        required: true
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -15,9 +26,13 @@ concurrency:
   cancel-in-progress: false
 jobs:
   metadata:
+    permissions:
+      contents: read
+      pull-requests: read
     timeout-minutes: 5
     runs-on: ubuntu-latest
     outputs:
+      ready: ${{ steps.metadata.outputs.ready }}
       tag: ${{ steps.metadata.outputs.tag }}
       commit: ${{ steps.metadata.outputs.commit }}
     steps:
@@ -25,24 +40,43 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
       - id: metadata
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
           REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          # Every release commit must already belong to the protected default branch.
+          git merge-base --is-ancestor "$commit" "origin/$DEFAULT_BRANCH"
+          if [[ "$EVENT_NAME" == push && -z "$RELEASE_TAG" ]]; then
+            ready="$(python3 scripts/release.py select --repository "$REPOSITORY" --commit "$commit" --default-branch "$DEFAULT_BRANCH")"
+            if [[ "$ready" != true ]]; then
+              printf 'ready=false\n' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if [[ -z "$RELEASE_TAG" ]]; then
+            RELEASE_TAG="$(python3 -c "import json; print('v' + json.load(open('vscode-extension/package.json'))['version'])")"
+          fi
           python3 scripts/release.py check --repository "$REPOSITORY" --tag "$RELEASE_TAG"
-          commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
-          test "$commit" = "$(git rev-parse HEAD)"
-          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$commit" >> "$GITHUB_OUTPUT"
+          printf 'ready=true\ntag=%s\ncommit=%s\n' "$RELEASE_TAG" "$commit" >> "$GITHUB_OUTPUT"
+
   tests:
+    if: needs.metadata.outputs.ready == 'true'
     needs: metadata
     uses: ./.github/workflows/test.yml
     with:
       ref: ${{ needs.metadata.outputs.commit }}
   lint:
+    if: needs.metadata.outputs.ready == 'true'
     needs: metadata
     uses: ./.github/workflows/lint.yml
     with:
@@ -56,6 +90,7 @@ jobs:
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -100,7 +135,7 @@ jobs:
           path: build/release/*
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 90
   native-smoke:
     timeout-minutes: 5
     needs: [metadata, build]
@@ -127,6 +162,9 @@ jobs:
           RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
         run: python scripts/release.py verify --require-vsix --smoke --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
   draft:
+    concurrency:
+      group: release-assets-${{ needs.metadata.outputs.tag }}
+      cancel-in-progress: false
     timeout-minutes: 10
     needs: [metadata, build, native-smoke]
     runs-on: ubuntu-latest
@@ -136,6 +174,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
@@ -143,10 +182,44 @@ jobs:
         with:
           name: ifttt-release
           path: build/release
+      - name: Create immutable version tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+        run: python3 scripts/release.py tag --repository "$REPOSITORY" --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+      - name: Check out the new Action version
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+          path: .local/release-action
+          persist-credentials: false
+      - name: Smoke-test the tagged composite Action
+        uses: ./.local/release-action
+        with:
+          args: --scan test/extension-playground
+      - name: Verify artifact behavior without publishing credentials
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+        run: python3 scripts/release.py verify --require-vsix --smoke --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
       - name: Create or update draft with verified assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
           RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
-        run: python3 scripts/release.py draft --repository "$REPOSITORY" --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+        run: python3 scripts/release.py draft --run-id "${{ github.run_id }}" --repository "$REPOSITORY" --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+  publish:
+    if: (github.event_name != 'workflow_dispatch' || inputs.publish) && needs.metadata.outputs.ready == 'true'
+    needs: [metadata, draft]
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.metadata.outputs.tag }}
+      artifact-run-id: ${{ fromJSON(github.run_id) }}
+      marketplace: ${{ inputs.marketplace || vars.VSCODE_MARKETPLACE == 'true' }}
+    secrets: inherit

@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -296,5 +298,34 @@ func TestValidateDirectivePrefix(t *testing.T) {
 				t.Fatalf("prefix = %q, want %q", cfg.Directives.Prefix, tc.want)
 			}
 		})
+	}
+}
+
+func TestDecodeSnapshotConfiguration(t *testing.T) {
+	cfg, err := Decode(nil)
+	if err != nil || cfg.Directives.Prefix != "LINT" || !cfg.PythonDocstringsEnabled() {
+		t.Fatalf("snapshot defaults: %#v, %v", cfg, err)
+	}
+	for _, content := range []string{"directives: [", "parallelism: invalid", "rules:\n  unknown_directive: typo", "directives:\n  prefix: LINT\n---\ndirectives:\n  prefix: CUSTOM\n", strings.Repeat(" ", (1<<20)+1)} {
+		if _, err := Decode([]byte(content)); err == nil {
+			t.Fatalf("invalid snapshot config accepted: %.80s", content)
+		}
+	}
+}
+
+func TestSnapshotConfigurationNormalizesRootPaths(t *testing.T) {
+	body := "ignores: [./source.go, 'github://acme/target/target.go#API']\nskip_directories: [./generated]\n"
+	root := filepath.Join(t.TempDir(), "checkout")
+	body += "output:\n  format: json\n"
+	cfg, err := Decode([]byte(body), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Ignores) != 2 || cfg.Ignores[0] != "source.go" || cfg.Ignores[1] != "github://acme/target/target.go#API" || len(cfg.SkipDirs) != 1 || cfg.SkipDirs[0] != "generated" {
+		t.Fatalf("snapshot paths differ from root config semantics: %#v", cfg)
+	}
+	absolute, err := Decode([]byte("ignores: ["+strconv.Quote(filepath.Join(root, "source.go"))+"]\n"), root)
+	if err != nil || len(absolute.Ignores) != 1 || absolute.Ignores[0] != "source.go" {
+		t.Fatalf("absolute snapshot path: %#v, %v", absolute, err)
 	}
 }

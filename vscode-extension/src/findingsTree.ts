@@ -140,7 +140,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 					label,
 					filePath: element.filePath,
 					targetPath: absTarget,
-					targetLabel: bucket.some(finding => finding.headRevision || finding.ruleId === 'label_ambiguous') ? undefined : bucket[0].targetLabel,
+					targetLabel: bucket.some(finding => finding.headRevision || ['label_ambiguous', 'match_label_ambiguous'].includes(finding.ruleId)) ? undefined : bucket[0].targetLabel,
 					finding: bucket[0],
 					count: bucket.length
 				});

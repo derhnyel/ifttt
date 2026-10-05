@@ -121,10 +121,10 @@ export class LintRunner {
 			diff = await new Promise<string>((resolve, reject) => {
 				cp.exec(diffCommand, { cwd: workingDirectory, encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => err ? reject(err) : resolve(stdout));
 			});
-			if (!diff.trim()) {
-				return { findings: [], ok: true, workspaceRoot: workingDirectory };
-			}
+			// LINT.IfChange(match_runner)
+			// An empty diff still needs content equality checks.
 			runArgs.push('-');
+			// LINT.ThenChange(//vscode-extension/test/runner.test.js:match_runner)
 		} else {
 			runArgs.push('--vcs', cfg.get<string>('vcs', 'auto'));
 			const revision = cfg.get<string>('revision', '').trim();
@@ -306,6 +306,10 @@ export async function ensureBinaryPath(
 	baseUrl: string,
 	workspaceRoot: string
 ): Promise<string> {
+	// LINT.IfChange(default_binary)
+	if (!configured.trim()) { configured = 'ifttt'; }
+	// LINT.ThenChange(//vscode-extension/test/runner.test.js:default_binary)
+
 	const executable = (candidate: string): boolean => {
 		try { fs.accessSync(candidate, fs.constants.X_OK); return fs.statSync(candidate).isFile(); } catch { return false; }
 	};

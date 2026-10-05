@@ -1019,16 +1019,89 @@ func TestExplicitBackendWithExternalPatchOrStructuralInputs(t *testing.T) {
 	requireCode(t, r, "", 0, "--vcs=git", "--format=json", "source file.go")
 }
 
-func TestExplicitStrictGooglePaths(t *testing.T) {
+// LINT.IfChange(strict_paths_default)
+func TestStrictGooglePathsDefaultAndOptOut(t *testing.T) {
 	r := newRepo(t)
 	r.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: LINT\n")
 	r.write(t, "source.go", "// LINT.IfChange\nvar a = 1\n// LINT.ThenChange(target.go)\n")
 	r.write(t, "target.go", "var b = 1\n")
+	output := requireCode(t, r, "", 1, "--format=json", "source.go")
+	if !strings.Contains(output, "invalid_target_path") {
+		t.Fatalf("default strict path check not reported: %s", output)
+	}
 	requireCode(t, r, "", 0, "--strict=false", "--format=json", "source.go")
 	requireCode(t, r, "", 1, "--strict=true", "--format=json", "source.go")
 	r.write(t, "source.go", "// LINT.IfChange\nvar a = 1\n// LINT.ThenChange(//target.go)\n")
-	requireCode(t, r, "", 0, "--strict=true", "--format=json", "source.go")
+	requireCode(t, r, "", 0, "--format=json", "source.go")
+	// Each documented strict target form must work without an opt-out.
+	r.write(t, "target.go", "// LINT.IfChange(API)\nvar b = 1\n// LINT.ThenChange()\n")
+	for _, target := range []string{"//target.go", "//target.go:API", ":API"} {
+		r.write(t, "source.go", "// LINT.IfChange(SOURCE)\nvar a = 1\n// LINT.ThenChange("+target+")\n// LINT.IfChange(API)\nvar local = 1\n// LINT.ThenChange()\n")
+		requireCode(t, r, "", 0, "--format=json", "source.go")
+	}
 }
+
+func TestReviewAndWatchStrictPathsDefaultAndOptOut(t *testing.T) {
+	for _, mode := range []string{"review", "watch"} {
+		for _, permissive := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/permissive=%v", mode, permissive), func(t *testing.T) {
+				r := newDefaultRepo(t)
+				source := "// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange(target.go)\n"
+				r.write(t, "source.go", source)
+				r.write(t, "target.go", "var target = 1\n")
+				r.git(t, "add", ".")
+				r.git(t, "commit", "-qm", "baseline")
+				r.write(t, "source.go", strings.Replace(source, "api = 1", "api = 2", 1))
+				r.write(t, "target.go", "var target = 2\n")
+				args := []string{mode, "--vcs=git", "--format=json"}
+				want := 1
+				if permissive {
+					args = append(args, "--strict=false")
+					want = 0
+				}
+				var report struct {
+					Errors []struct {
+						RuleID string `json:"ruleId"`
+					} `json:"errors"`
+				}
+				if mode == "review" {
+					r.git(t, "add", ".")
+					r.git(t, "commit", "-qm", "update both sections")
+					output := requireCode(t, r, "", want, append(args, "HEAD")...)
+					if err := json.Unmarshal([]byte(output), &report); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					cmd := exec.CommandContext(ctx, binary, append(args, "--interval=25ms")...)
+					cmd.Dir, cmd.Env = r.dir, r.env
+					stdout, err := cmd.StdoutPipe()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := cmd.Start(); err != nil {
+						t.Fatal(err)
+					}
+					defer func() {
+						if err := cmd.Process.Signal(os.Interrupt); err != nil {
+							cancel()
+						}
+						_ = cmd.Wait()
+					}()
+					if err := json.NewDecoder(stdout).Decode(&report); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if len(report.Errors) != want || (want == 1 && report.Errors[0].RuleID != "invalid_target_path") {
+					t.Fatalf("expected %d strict path findings, got %+v", want, report.Errors)
+				}
+			})
+		}
+	}
+}
+
+// LINT.ThenChange(//cmd/ifttt/main.go:strict_paths_default, //README.md:strict_paths_default)
 
 func TestUpstreamShortFlags(t *testing.T) {
 	r := fixture(t)
@@ -1372,21 +1445,18 @@ func TestNativeReverseDiscoveryUsesOneNeedleQuery(t *testing.T) {
 				t.Fatalf("referencing sources=%d want %d: %s", len(sources), expected, output)
 			}
 			queries, err := os.ReadFile(log)
-			if mode == "ordinary-body" {
-				if err != nil && !os.IsNotExist(err) {
-					t.Fatal(err)
-				}
-				if len(queries) != 0 {
-					t.Fatalf("ordinary edit unexpectedly queried repository: %s", queries)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(queries) != "grep -I -l -z --fixed-strings -e SENTRY. -- .\n" {
-				t.Fatalf("expected exactly one directive-only query independent of changed paths: %q", queries)
+			needle := "SENTRY."
+			if mode == "ordinary-body" {
+				needle += "Match"
 			}
+			expectedQuery := "grep --text -l -z --fixed-strings -e " + needle + " -- .\n"
+			if string(queries) != expectedQuery {
+				t.Fatalf("expected exactly one needle query, reused for reverse and Match validation: %q", queries)
+			}
+
 		})
 	}
 }
