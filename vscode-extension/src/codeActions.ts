@@ -22,7 +22,9 @@ export class FindingCodeActionProvider implements vscode.CodeActionProvider {
 				: undefined;
 
 			if (targetAbs) {
-				const targetLabel = finding.headRevision || finding.ruleId === 'label_ambiguous' ? undefined : finding.targetLabel;
+				// LINT.IfChange(match_actions)
+				const targetLabel = finding.headRevision || ['label_ambiguous', 'match_label_ambiguous'].includes(finding.ruleId) ? undefined : finding.targetLabel;
+				// LINT.ThenChange(//vscode-extension/test/ui.test.js:match_actions)
 				const jump = new vscode.CodeAction(
 					targetLabel ? 'Jump to label' : 'Open target file',
 					vscode.CodeActionKind.QuickFix

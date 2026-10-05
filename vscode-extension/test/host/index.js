@@ -13,7 +13,14 @@ exports.run = async function () {
  const uri = vscode.Uri.file(path.join(root, 'source.go'));
  const document = await vscode.workspace.openTextDocument(uri);
  await vscode.window.showTextDocument(document);
+ // LINT.IfChange(default_binary_host)
+ const initialConfig = vscode.workspace.getConfiguration('iftttLint', uri);
+ const configuredBinary = initialConfig.get('binary');
+ await initialConfig.update('binary', '', vscode.ConfigurationTarget.WorkspaceFolder);
+ // Native mode accepts the empty diff command; an empty binary setting uses PATH.
  await vscode.commands.executeCommand('iftttLint.run');
+ await initialConfig.update('binary', configuredBinary, vscode.ConfigurationTarget.WorkspaceFolder);
+ // LINT.ThenChange(//vscode-extension/test/run-host.py:default_binary_host)
  // A clean other repository must not erase the first report. The primary
  // CLI starts in a nested working directory and reports its actual repo root.
  const secondary = vscode.workspace.workspaceFolders[1].uri.fsPath;
@@ -22,6 +29,35 @@ exports.run = async function () {
  const secondaryDocument = await vscode.workspace.openTextDocument(secondaryUri);
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
+ // LINT.IfChange(directive_hover)
+ const cleanHovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', secondaryUri, new vscode.Position(0, 12));
+ const cleanHoverText = cleanHovers.flatMap(hover => hover.contents).map(content => content.value ?? String(content)).join('\n');
+ assert.match(cleanHoverText, /LINT\.IfChange/, 'a valid directive must have help even without findings');
+ const hoverText = async (resource, line) => {
+  const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', resource, new vscode.Position(line, 12));
+  return hovers.flatMap(hover => hover.contents).map(content => content.value ?? String(content)).join('\n')
+   .replace(/&nbsp;/g, ' ').replace(/\\([_.])/g, '$1');
+ };
+ const closingHelp = await hoverText(secondaryUri, 2);
+ assert.match(closingHelp, /Targets:.*\/\/target\.go:shared_label/, `closing directives must explain their targets: ${closingHelp}`);
+ const navigationUri = vscode.Uri.file(path.join(root, 'navigation.go'));
+ await vscode.workspace.openTextDocument(navigationUri);
+ assert.match(await hoverText(navigationUri, 0), /SENTRY\.Label/, 'hover must use the source folder configured prefix');
+ const targetUri = vscode.Uri.file(path.join(secondary, 'target.go'));
+ await vscode.workspace.openTextDocument(targetUri);
+ for (const line of [0, 1, 3, 4]) {
+  assert.doesNotMatch(await hoverText(targetUri, line), /Start a guarded section|Close the guarded section/, 'strings, prose and fenced examples must not receive directive help');
+ }
+ assert.match(await hoverText(targetUri, 6), /Start a guarded section/);
+ const unsavedEdit = new vscode.WorkspaceEdit();
+ unsavedEdit.replace(secondaryUri, new vscode.Range(0, 0, 0, secondaryDocument.lineAt(0).text.length), '// LINT.IfChange(UNSAVED)');
+ assert.equal(await vscode.workspace.applyEdit(unsavedEdit), true);
+ assert.match(await hoverText(secondaryUri, 0), /Argument: UNSAVED/, 'hover must inspect the current unsaved editor buffer');
+ assert.match(await fs.readFile(secondaryUri.fsPath, 'utf8'), /IfChange\(API\)/, 'hover must leave working files unchanged');
+ const restoreEdit = new vscode.WorkspaceEdit();
+ restoreEdit.replace(secondaryUri, new vscode.Range(0, 0, 0, secondaryDocument.lineAt(0).text.length), '// LINT.IfChange(API)');
+ assert.equal(await vscode.workspace.applyEdit(restoreEdit), true);
+ // LINT.ThenChange(//vscode-extension/src/hover.ts:directive_hover)
  const diagnostics = vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt');
  assert.equal(diagnostics.length, 1, 'real extension must publish the real CLI finding');
  assert.equal(diagnostics[0].code, 'then_missing');
@@ -48,6 +84,7 @@ exports.run = async function () {
  // Save an inactive second-folder document while the first folder disables save linting.
  await vscode.window.showTextDocument(document);
  const edit = new vscode.WorkspaceEdit();
+ edit.replace(secondaryUri, new vscode.Range(0, 0, 0, secondaryDocument.lineAt(0).text.length), '// LINT.IfChange(API_RENAMED)');
  edit.replace(secondaryUri, new vscode.Range(1, 0, 1, secondaryDocument.lineAt(1).text.length), 'var api = 2');
  assert.equal(await vscode.workspace.applyEdit(edit), true);
  assert.equal(await secondaryDocument.save(), true);
@@ -60,6 +97,7 @@ exports.run = async function () {
  } while (Date.now() < deadline);
  assert.equal(secondaryDiagnostics.length, 1, 'saving the inactive document must use its folder runOnSave setting and native repository');
  assert.equal(secondaryDiagnostics[0].code, 'then_label_missing');
+ assert.equal(secondaryDiagnostics[0].severity, vscode.DiagnosticSeverity.Error, 'a missing linked edit must appear as an error in Problems');
  await vscode.window.showTextDocument(document);
  // Save-triggered diagnostics reach the extension host before VS Code's
  // code-action service necessarily receives them. Wait for the actual action,
@@ -101,12 +139,35 @@ exports.run = async function () {
  await fs.writeFile(path.join(secondary, 'target.go'), '// LINT.IfChange(shared_label)\nvar target = 1\n// LINT.ThenChange()\n');
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt').length, 1);
+ const retainedSecondary = vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt');
+ assert.equal(retainedSecondary.length, 1);
  assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 1, 'two repositories must retain both reports');
  await vscode.commands.executeCommand('iftttLint.applyFix', secondaryUri);
  assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt').length, 0);
  assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 1, 'clearing the second repository must retain the first');
  const primarySource = await fs.readFile(path.join(root, 'source.go'), 'utf8');
+ // LINT.IfChange(match_host)
+ const matchUri = vscode.Uri.file(path.join(secondary, 'match.go'));
+ const matchSource = '// LINT.IfChange(A)\none\n// LINT.ThenChange()\n// LINT.Match(":A", "//match-target.go:B")\n';
+ await fs.writeFile(matchUri.fsPath, matchSource);
+ await fs.writeFile(path.join(secondary, 'match-target.go'), '// LINT.IfChange(B)\ntwo\n// LINT.ThenChange()\n');
+ const matchDocument = await vscode.workspace.openTextDocument(matchUri);
+ await vscode.window.showTextDocument(matchDocument);
+ const matchConfig = vscode.workspace.getConfiguration('iftttLint', matchUri);
+ await matchConfig.update('args', ['--files', 'match.go'], vscode.ConfigurationTarget.WorkspaceFolder);
+ await vscode.commands.executeCommand('iftttLint.run');
+ const matchDiagnostics = vscode.languages.getDiagnostics(matchUri).filter(d => d.source === 'ifttt');
+ assert.equal(matchDiagnostics.length, 1);assert.equal(matchDiagnostics[0].code, 'match_mismatch');
+ const matchActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', matchUri, matchDiagnostics[0].range);
+ const matchJump = matchActions.find(a => a.command?.command === 'iftttLint.jumpToLabel');
+ assert.ok(matchJump);assert.equal(matchActions.some(a => ['iftttLint.applyFix','iftttLint.scaffoldDirective'].includes(a.command?.command)), false);
+ await vscode.commands.executeCommand(matchJump.command.command, ...matchJump.command.arguments);
+ assert.equal(vscode.window.activeTextEditor.document.uri.fsPath, path.join(secondary, 'match-target.go'));
+ assert.equal(vscode.window.activeTextEditor.selection.start.line, 1);
+ await matchConfig.update('args', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+ await fs.rm(matchUri.fsPath);await fs.rm(path.join(secondary, 'match-target.go'));
+ await vscode.window.showTextDocument(document);
+ // LINT.ThenChange(//test/integration/match_test.go:match_contract, //vscode-extension/test/runner.test.js:match_runner)
  await fs.writeFile(path.join(root, 'source.go'), '// SENTRY.Ignore("all")\n' + primarySource);
  await vscode.window.showTextDocument(document);
  await vscode.commands.executeCommand('iftttLint.run');
@@ -163,7 +224,7 @@ exports.run = async function () {
  // Spaced paths and continued target lists must also work in the real host.
  await fs.writeFile(path.join(nestedRoot, 'target.go'), '// LINT.IfChange(shared_label)\nvar target = 1\n// LINT.ThenChange()\n');
  await fs.writeFile(path.join(nestedRoot, 'target file.go'), '// LINT.IfChange(shared_label)\nvar target = 2\n// LINT.ThenChange()\n');
- await fs.writeFile(path.join(nestedRoot, 'source.go'), '// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange( \\\n// target file.go:shared_label)\n');
+ await fs.writeFile(path.join(nestedRoot, 'source.go'), '// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange( \\\n// //target file.go:shared_label)\n');
  await vscode.commands.executeCommand('iftttLint.run');
  assert.equal(vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt').length, 0);
  // An unmatched URL must stay an error, even with a matching local alias.
@@ -189,10 +250,12 @@ exports.run = async function () {
  const commit = (checkout, message) => {git(checkout,['add','.']);git(checkout,['-c','core.hooksPath=','commit','-qm',message]);return git(checkout,['rev-parse','HEAD']);};
  for (const checkout of [sourceRepo,targetRepo]) {
   await fs.mkdir(checkout);
+  await fs.writeFile(path.join(checkout,'.ifttt-lint.yaml'),`directives:\n  prefix: ${checkout === sourceRepo ? 'SENTRY' : 'LINT'}\n`);
   git(checkout,['init','-q']);git(checkout,['config','user.name','Test']);git(checkout,['config','user.email','test@example.invalid']);
  }
  const sourceContents = value => `// SENTRY.IfChange("API")\nvar api = ${value}\n// SENTRY.ThenChange(["github://acme/target/target.go#API", "local.go#API"])\n`;
  const labelContents = value => `// SENTRY.Label("API")\nvar target = ${value}\n// SENTRY.EndLabel\n`;
+ const foreignContents = value => `// LINT.IfChange(API)\nvar target = ${value}\n// LINT.ThenChange()\n`;
  await fs.writeFile(path.join(sourceRepo,'source.go'),sourceContents(1));
  await fs.writeFile(path.join(sourceRepo,'local.go'),labelContents(1));
  const sourceBase = commit(sourceRepo,'source baseline');
@@ -200,9 +263,9 @@ exports.run = async function () {
  const sourceHead = commit(sourceRepo,'source-only update');
  await fs.writeFile(path.join(sourceRepo,'local.go'),labelContents(2));
  const sourcePaired = commit(sourceRepo,'paired local update');
- await fs.writeFile(path.join(targetRepo,'target.go'),labelContents(1));
+ await fs.writeFile(path.join(targetRepo,'target.go'),foreignContents(1));
  const targetBase = commit(targetRepo,'target baseline');
- await fs.writeFile(path.join(targetRepo,'target.go'),labelContents(2));
+ await fs.writeFile(path.join(targetRepo,'target.go'),foreignContents(2));
  const targetHead = commit(targetRepo,'target update');
  // Working content deliberately differs from the selected snapshots.
  await fs.writeFile(path.join(sourceRepo,'source.go'),sourceContents(99));
@@ -249,7 +312,7 @@ exports.run = async function () {
  await vscode.commands.executeCommand('iftttLint.run');
  assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'ifttt').length,0,'paired immutable snapshots must satisfy cross-repo dependencies despite dirty files');
  assert.ok(process.env.IFTTT_HOST_RESULT, 'host result marker must be configured');
- await fs.writeFile(process.env.IFTTT_HOST_RESULT, JSON.stringify({passed:true, assertions:'diagnostics, navigation, code lenses, fix, clear, multi-root, exact label, inactive-document save with folder settings, LINT scaffold quick action, ambiguous labels, spaced continued targets, unmatched URL aliases, immutable cross-repo Git snapshots, metadata, read-only commands'}));
+ await fs.writeFile(process.env.IFTTT_HOST_RESULT, JSON.stringify({passed:true, assertions:'diagnostics, navigation, code lenses, fix, clear, multi-root, exact label, inactive-document save with folder settings, LINT scaffold quick action, ambiguous labels, spaced continued targets, unmatched URL aliases, mixed-prefix immutable cross-repo Git snapshots, metadata, read-only commands'}));
  console.log('Actual VS Code extension host workflow passed');
  } catch (error) {
   if (process.env.IFTTT_HOST_RESULT) await fs.writeFile(process.env.IFTTT_HOST_RESULT, JSON.stringify({passed:false,error:error.stack || String(error)}));
