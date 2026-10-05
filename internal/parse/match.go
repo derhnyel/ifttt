@@ -11,6 +11,8 @@ import (
 // The caller strips the owning repository’s prefix before parsing arguments.
 // Double quotes use JSON/Go escapes; single quotes preserve regex backslashes.
 // References stay raw so the engine resolves them with the source grammar.
+// Discovery ignores do not change selector parsing: an explicit endpoint can
+// name a Git-ignored file and must still be compared by the engine.
 func parseMatch(body string, line int) core.LintDirective {
 	d := core.LintDirective{Kind: core.Match, Line: line}
 	bad := func() core.LintDirective {

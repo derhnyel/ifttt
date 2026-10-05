@@ -67,6 +67,21 @@ func TestMatchExactAndRegex(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchScanIgnorePolicyKeepsExplicitEndpoints(t *testing.T) {
+	r := newDefaultRepo(t)
+	r.write(t, ".gitignore", "target.txt\nignored.txt\n")
+	r.write(t, ".ifttt-lint.yaml", "ignores: [configured.txt]\n")
+	r.write(t, "source.txt", matchSection("A", "same")+"// LINT.Match(\":A\", \"//target.txt:B\")\n")
+	r.write(t, "target.txt", matchSection("B", "same"))
+	for _, name := range []string{"ignored.txt", "configured.txt"} {
+		r.write(t, name, "// LINT.Match(\":MISSING\", \"//missing.txt:NO\")\n")
+	}
+	requireCode(t, r, "", 0, "--scan", ".", "--format=json")
+	r.write(t, "target.txt", matchSection("B", "different"))
+	out := requireCode(t, r, "", 1, "--scan", ".", "--format=json")
+	assertMatchRule(t, out, "match_mismatch")
+}
 func TestMatchUnchangedGitAndJJ(t *testing.T) {
 	for _, kind := range []string{"git", "jj"} {
 		t.Run(kind, func(t *testing.T) {

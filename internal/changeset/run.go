@@ -263,12 +263,16 @@ func repositoryOptions(repository *snapshot, options engine.Options) engine.Opti
 	if !explicit["code-only"] {
 		options.CodeOnly = cfg.Rules.CodeOnly
 	}
+	// LINT.IfChange(snapshot_ignore_policy)
+	// Discovery is committed-only. Source exclusions belong to each pinned
+	// repository's config; working-tree ignore rules cannot hide tracked contracts.
 	if !explicit["ignore"] {
 		options.Ignores = append([]string{}, cfg.Ignores...)
 	}
 	if !explicit["skip-dir"] {
 		options.SkipDirs = append([]string{}, cfg.SkipDirs...)
 	}
+	// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_ignore_policy, //README.md:snapshot_ignore_policy)
 	if !explicit["parallelism"] {
 		options.Parallelism = 0
 		if n, err := strconv.Atoi(cfg.Parallelism); err == nil {

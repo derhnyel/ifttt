@@ -97,7 +97,11 @@ Use `--vcs auto|git|jj` to select the backend. Automatic detection chooses jj wh
 
 Source paths and quoted globs check directive syntax, target files and labels. With `--diff`, they limit which changed sources the tool checks. Stale-reference checks still search the whole repository. Repeat `--files` to select several sources.
 
-`--scan` includes hidden and Git-ignored files. It skips symlinks. By default, it also skips VCS metadata, dependency directories and build outputs.
+<!-- LINT.IfChange(scan_local_artifacts) -->
+Automatic discovery respects `.gitignore`, including nested rules and `!` exceptions. Git repositories also use Git's exclude files. Tracked files and explicitly linked targets are checked even when Git ignores them. Hidden files are included; symlinks are skipped.
+
+Default skips cover VCS metadata and dependency/cache folders: `.git`, `.jj`, `.hg`, `.svn`, `node_modules`, `vendor`, `.cache`, `.gocache`, `.venv` and `__pycache__`. Editor directories and build outputs follow your ignore rules. `--skip-dir` or configured `skip_directories` replace the defaults. `--ignore` or configured `ignores` add exclusions. `--verbose` shows discovery start and completion.
+<!-- LINT.ThenChange(//internal/scan/scan.go:scan_local_artifacts, //test/integration/cli_test.go:scan_local_artifacts) -->
 
 | Command | Purpose |
 | --- | --- |
@@ -217,7 +221,7 @@ These additional directives use quoted arguments. They are specific to this impl
 Inside an IfChange block, `RequireAny`, `RequireAll` and `ForbidChange` apply when the block body changes. Outside a block, they apply when the source file changes. These rules need a diff to check edits.
 
 <!-- LINT.IfChange(conditional_target_structure) -->
-Their target files and labels must exist, even when the source did not change or required-edit checks are suppressed. Ignored targets and skipped directories are excluded. A config change does not count as an edit to a target section.
+Their target files and labels must exist, even when the source did not change or required-edit checks are suppressed. Configured ignores and skipped directories exclude targets. Editor and build directories are eligible by default. Git ignore rules do not suppress explicitly linked targets. A config change does not count as an edit to a target section.
 <!-- LINT.ThenChange(//internal/engine/rules.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure) -->
 
 Targets can select a file or a labelled section, such as `//one.go:API`. Extended `Label` names can use `#` selectors, such as `//one.go#API`.
@@ -264,7 +268,7 @@ Use [Go regex syntax](https://pkg.go.dev/regexp/syntax). Lookaround and backrefe
 
 </details>
 
-Match also runs on empty diffs and `NO_IFTTT` ranges. Git/jj runs find tracked Match directives. Select untracked files explicitly. File selections and scans limit the source files checked. Cross-repository manifests compare committed snapshots. Each section uses its repository’s committed prefix and Python comment settings. Use `#label` selectors with a custom directive prefix.
+Match also runs on empty diffs and `NO_IFTTT` ranges. Git/jj runs find tracked Match directives. Select untracked files explicitly. File selections and scans limit the source files checked. Scan discovery respects Git ignores and configured source exclusions; explicitly linked Git-ignored sections are still compared. Cross-repository manifests compare committed snapshots. Each section uses its repository’s committed prefix and Python comment settings. Use `#label` selectors with a custom directive prefix.
 
 Git uses one fixed-string query to find Match sources. It reuses the query for reverse-reference checks. The engine parses only the hits and their targets. Prefer shared content or generation when possible.
 
@@ -476,8 +480,12 @@ Ordinary remote checks test whether a file and label exist. Change sets check ma
 <!-- LINT.IfChange(snapshot_config) -->
 Each repository uses its root `.ifttt-lint.yaml` from the selected `head` commit. Linked sections can use different configured prefixes. A repository without this file uses `LINT` and the default rules.
 
-IFTTT Lint reads each config once. Config changes also trigger incoming-reference checks. Dirty checkout configs, configs above the checkout and nested configs do not apply in change-set mode. Commit each repository's prefix, Python comment settings and lint rules in its root config. Explicit `--code-only`, `--ignore`, `--skip-dir` and thread flags override its source settings. Output flags apply to the whole report.
+IFTTT Lint reads each config once. Config changes also trigger incoming-reference checks. Dirty checkout configs, configs above the checkout and nested configs do not apply in change-set mode. Commit each repository's prefix, Python comment settings, exclusions and lint rules in its root config. Explicit `--code-only`, `--ignore`, `--skip-dir` and thread flags override its source settings. Output flags apply to the whole report.
 <!-- LINT.ThenChange(//internal/changeset/run.go:snapshot_config) -->
+
+<!-- LINT.IfChange(snapshot_ignore_policy) -->
+Change-set checks read only committed files. Each source repository uses its committed `ignores` and `skip_directories`, with the same default skips. Local ignored files and dirty ignore settings do not affect the result. A `.gitignore` rule does not exclude an already committed file or an explicitly linked target. Use the linter configuration to exclude committed sources.
+<!-- LINT.ThenChange(//internal/changeset/run.go:snapshot_ignore_policy, //test/integration/change_set_test.go:snapshot_ignore_policy) -->
 
 Change-set mode cannot combine with these inputs or commands:
 

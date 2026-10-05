@@ -39,7 +39,7 @@ func matchCandidates(opts Options, skip []string) ([]string, error) {
 			repository, err = vcs.Open(context.Background(), ".", "auto")
 		}
 		if err != nil {
-			return scan.FindDirectiveFiles(".", needle, workerLimit(opts.Parallelism), skip)
+			return scan.FindDirectiveFiles(".", needle, workerLimit(opts.Parallelism), skip, opts.Ignores...)
 		}
 	}
 	return repository.DirectiveFilesWithBinary(context.Background(), needle)

@@ -55,7 +55,7 @@ func TestConditionalTargetStructureWithoutCoChanges(t *testing.T) {
 
 func TestConditionalTargetsInSkippedDirectories(t *testing.T) {
 	for _, rule := range []string{"RequireAny", "RequireAll", "ForbidChange"} {
-		for _, directory := range []string{"build", "excluded"} {
+		for _, directory := range []string{"node_modules", "build", "excluded"} {
 			for _, labelled := range []bool{false, true} {
 				for _, exists := range []bool{false, true} {
 					for _, active := range []bool{false, true} {
@@ -75,7 +75,7 @@ func TestConditionalTargetsInSkippedDirectories(t *testing.T) {
 								files[path] = "// SENTRY.Label(\"API\")\nbody\n// SENTRY.EndLabel\n"
 							}
 							opts := Options{StructuralFiles: []string{"source.go"}}
-							if directory == "excluded" {
+							if directory != "node_modules" {
 								opts.SkipDirs = []string{directory}
 							}
 							var diff []string

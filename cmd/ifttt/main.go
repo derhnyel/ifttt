@@ -48,7 +48,7 @@ var ruleCatalog = map[string]ruleInfo{
 	"match_no_match":        {Summary: "The regex found no values or extracted an empty value.", Severity: "error", Resolution: "Correct the pattern or section so both sides provide nonempty values."},
 	"match_label_missing":   {Summary: "A Match reference names a label that does not exist.", Severity: "error", Resolution: "Correct the reference or add the labelled content with the target repository’s configured prefix. Placeholder fixes are unavailable for Match."},
 	"match_label_ambiguous": {Summary: "A Match reference names more than one labelled section.", Severity: "error", Resolution: "Give every section a unique label and update the reference."},
-	"match_target_error":    {Summary: "A Match section could not be read or has invalid directive structure.", Severity: "error", Resolution: "Check the target path, provider configuration and section boundaries."},
+	"match_target_error":    {Summary: "A Match section could not be read or has invalid directive structure.", Severity: "error", Resolution: "Check the target path, provider configuration and section boundaries. Git ignore rules do not suppress explicitly linked Match targets."},
 	// LINT.ThenChange(//test/integration/match_test.go:match_contract, //README.md:match_contract)
 
 	"change_evidence_error": {
@@ -342,7 +342,7 @@ func main() {
 		if root == "" {
 			root = "."
 		}
-		findings, err := runDoctor(root, cfg.SkipDirs, *fix)
+		findings, err := runDoctor(root, cfg.SkipDirs, *fix, cfg.Ignores...)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ifttt doctor:", err)
 			os.Exit(2)
@@ -359,7 +359,7 @@ func main() {
 	}
 
 	if *scan != "" {
-		files, err := scanForLint(*scan, cfg.SkipDirs)
+		files, err := scanForLint(*scan, cfg.SkipDirs, cfg.Ignores...)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
@@ -633,9 +633,9 @@ func writerForFormat(format string) core.ResultWriter {
 	}
 }
 
-func scanForLint(root string, skip []string) ([]string, error) {
+func scanForLint(root string, skip []string, excludes ...string) ([]string, error) {
 	syn := core.CurrentDirectiveSyntax()
-	files, err := scan.FindDirectiveFiles(root, syn.PrefixDot, -1, skip)
+	files, err := scan.FindDirectiveFiles(root, syn.PrefixDot, -1, skip, excludes...)
 	if err != nil {
 		return nil, err
 	}
@@ -1224,14 +1224,14 @@ func deriveLabel(path string) string {
 	return label
 }
 
-func runDoctor(root string, skip []string, fix bool) ([]core.Finding, error) {
+func runDoctor(root string, skip []string, fix bool, excludes ...string) ([]core.Finding, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
 	root = absRoot
 	syn := core.CurrentDirectiveSyntax()
-	files, err := scan.FindDirectiveFiles(root, syn.PrefixDot, -1, skip)
+	files, err := scan.FindDirectiveFiles(root, syn.PrefixDot, -1, skip, excludes...)
 	if err != nil {
 		return nil, err
 	}
