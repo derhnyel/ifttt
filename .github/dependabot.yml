@@ -15,3 +15,8 @@ updates:
     directory: /vscode-extension
     schedule:
       interval: weekly
+    ignore:
+      # API declarations must match the minimum supported VS Code version.
+      # Update this constraint when engines.vscode is raised.
+      - dependency-name: '@types/vscode'
+        versions: ['>1.88.0']
