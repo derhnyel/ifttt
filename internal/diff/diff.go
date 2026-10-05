@@ -121,9 +121,11 @@ func stripPrefix(path string) string {
 	return core.NormalizePath(path)
 }
 
+// LINT.IfChange(combined_header_detection)
 type combinedDetector struct {
 	r     io.Reader
 	tail  []byte
+	read  int64
 	found bool
 }
 
@@ -131,10 +133,13 @@ func (d *combinedDetector) Read(p []byte) (n int, err error) {
 	n, err = d.r.Read(p)
 	if n > 0 {
 		segment := append(d.tail, p[:n]...)
-		if bytes.Contains(segment, []byte("diff --cc ")) || bytes.Contains(segment, []byte("diff --combined ")) {
+		atStart := d.read == int64(len(d.tail))
+		if (atStart && (bytes.HasPrefix(segment, []byte("diff --cc ")) || bytes.HasPrefix(segment, []byte("diff --combined ")))) ||
+			bytes.Contains(segment, []byte("\ndiff --cc ")) || bytes.Contains(segment, []byte("\ndiff --combined ")) {
 			d.found = true
 		}
-		const maxPattern = len("diff --combined ")
+		d.read += int64(n)
+		const maxPattern = len("\ndiff --combined ")
 		keep := maxPattern - 1
 		if keep < 0 {
 			keep = 0
@@ -150,3 +155,5 @@ func (d *combinedDetector) Read(p []byte) (n int, err error) {
 	}
 	return n, err
 }
+
+// LINT.ThenChange(//internal/diff/diff_test.go:combined_headers)
