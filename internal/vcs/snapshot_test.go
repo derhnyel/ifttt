@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -536,5 +537,64 @@ func TestSnapshotGitObjectAbbreviationAndRefCollisionFailsClosed(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSnapshotReusesVerifiedCommitIDs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command recorder")
+	}
+	f := makeSnapshotFixture(t, "git")
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := t.TempDir()
+	log := filepath.Join(recorder, "commands")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$IFTTT_TEST_COMMAND_LOG\"\nexec \"$IFTTT_TEST_REAL_GIT\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(recorder, "git"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("IFTTT_TEST_COMMAND_LOG", log)
+	t.Setenv("IFTTT_TEST_REAL_GIT", realGit)
+	t.Setenv("PATH", recorder+string(os.PathListSeparator)+os.Getenv("PATH"))
+	backend, err := OpenSnapshot(context.Background(), f.root, "git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := backend.ResolveRevision(context.Background(), f.head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		data, err := backend.ReadFileAt(context.Background(), id, "plain")
+		if err != nil || string(data) != "plain\n" {
+			t.Fatalf("snapshot read: %q, %v", data, err)
+		}
+	}
+	commands, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(commands), "rev-parse --verify"); count != 1 {
+		t.Fatalf("immutable ID resolved %d times; expected once: %s", count, commands)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := backend.ResolveRevision(cancelled, id); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cached ID ignored cancellation: %v", err)
+	}
+	command(t, f.root, "git", "branch", "--force", "moving", f.base)
+	first, err := backend.ResolveRevision(context.Background(), "moving")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command(t, f.root, "git", "branch", "--force", "moving", f.head)
+	second, err := backend.ResolveRevision(context.Background(), "moving")
+	if err != nil || first != f.base || second != f.head {
+		t.Fatalf("mutable name cached: %s, %s, %v", first, second, err)
+	}
+	if _, err := backend.ResolveRevision(context.Background(), strings.Repeat("f", 40)); err == nil {
+		t.Fatal("unverified ID was trusted")
 	}
 }

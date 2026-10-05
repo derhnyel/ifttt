@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	core "github.com/derhnyel/ifttt/internal"
+	"github.com/derhnyel/ifttt/internal/config"
 	"github.com/derhnyel/ifttt/internal/engine"
+	"github.com/derhnyel/ifttt/internal/parse"
 	"github.com/derhnyel/ifttt/internal/vcs"
 )
 
@@ -28,6 +31,12 @@ func Run(ctx context.Context, manifest Manifest, options engine.Options) (engine
 	reverse := false
 	for _, repository := range repositories {
 		factory.repositories[repository.entry.Repo] = repository
+		// LINT.IfChange(snapshot_config_changes)
+		// Config-only edits can remove target labels from the active grammar.
+		if repository.configurationChanged() {
+			reverse = true
+		}
+		// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_config_changes)
 		for _, change := range repository.changes {
 			if change.Deleted || change.Renamed || change.TypeChanged || change.Opaque || removedLabel(change) {
 				reverse = true
@@ -37,23 +46,42 @@ func Run(ctx context.Context, manifest Manifest, options engine.Options) (engine
 	code := 0
 	metadata := make([]map[string]string, 0, len(repositories))
 	for _, repository := range repositories {
-		opts := options
+		opts := repositoryOptions(repository, options)
 		opts.Files = repository.files
 		opts.Factories = []engine.FileProviderFactory{factory}
 		opts.RevisionChanges = repository.changes
 		opts.DependencyChanges = factory.changes
+		opts.DependencyConfigChanged = func(target string) bool {
+			owner := repository
+			if strings.Contains(target, "://") {
+				bound := factory.lookup(target)
+				if bound.err != nil {
+					return false
+				}
+				owner = bound.snapshot
+			}
+			return owner.configurationChanged()
+		}
 		opts.ReverseCandidates = []string{}
 		opts.Repository = nil
 		opts.Fix = false
 		opts.SourceFiles = nil
 		opts.StructuralFiles = nil
+		// LINT.IfChange(match_snapshots)
+		needle := repository.settings.Syntax.PrefixDot + "Match"
 		if reverse {
-			candidates, err := repository.backend.DirectiveFilesAt(ctx, repository.head, core.CurrentDirectiveSyntax().PrefixDot)
-			if err != nil {
-				return result, 2, fmt.Errorf("repository %s reverse discovery: %w", repository.entry.Repo, err)
-			}
+			needle = repository.settings.Syntax.PrefixDot
+		}
+		candidates, err := repository.backend.DirectiveFilesAt(ctx, repository.head, needle)
+		if err != nil {
+			return result, 2, fmt.Errorf("repository %s directive discovery: %w", repository.entry.Repo, err)
+		}
+		opts.MatchCandidates = candidates
+		if reverse {
 			opts.ReverseCandidates = candidates
 		}
+		// LINT.ThenChange(//test/integration/match_test.go:match_contract)
+
 		res, current := engine.Lint("", opts)
 		if current > code {
 			code = current
@@ -106,6 +134,7 @@ func Run(ctx context.Context, manifest Manifest, options engine.Options) (engine
 	result.Stats["repositories"] = metadata
 	return result, code, nil
 }
+
 func prepare(ctx context.Context, manifest Manifest) ([]*snapshot, error) {
 	var repositories []*snapshot
 	var roots []os.FileInfo
@@ -155,6 +184,11 @@ func prepare(ctx context.Context, manifest Manifest) ([]*snapshot, error) {
 	}
 	sort.Slice(repositories, func(i, j int) bool { return repositories[i].entry.Repo < repositories[j].entry.Repo })
 	for _, repository := range repositories {
+		if err := loadConfiguration(repository); err != nil {
+			return nil, err
+		}
+	}
+	for _, repository := range repositories {
 		patch, err := repository.backend.Diff(ctx, vcs.Request{Base: repository.base, Revision: repository.head})
 		if err != nil {
 			return nil, fmt.Errorf("repository %s diff: %w", repository.entry.Repo, err)
@@ -174,6 +208,7 @@ func prepare(ctx context.Context, manifest Manifest) ([]*snapshot, error) {
 				change = &core.FileChanges{File: name}
 				changes[name] = change
 			}
+			change.DirectivePrefix = repository.settings.Syntax.Prefix
 			change.ContentChanged = true
 			change.Deleted = item.Deleted
 			change.TypeChanged = item.TypeChanged
@@ -196,7 +231,7 @@ func prepare(ctx context.Context, manifest Manifest) ([]*snapshot, error) {
 	return repositories, nil
 }
 func removedLabel(change *core.FileChanges) bool {
-	syntax := core.CurrentDirectiveSyntax()
+	syntax := core.NewDirectiveSyntax(change.DirectivePrefix)
 	for _, text := range change.RemovedInNew {
 		if strings.Contains(text, syntax.TokenIfChange) || strings.Contains(text, syntax.TokenLabel) {
 			return true
@@ -204,6 +239,48 @@ func removedLabel(change *core.FileChanges) bool {
 	}
 	return false
 }
+
+// LINT.IfChange(snapshot_config)
+func loadConfiguration(repository *snapshot) error {
+	data, err := repository.files.ReadFile(".ifttt-lint.yaml")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("repository %s configuration: %w", repository.entry.Repo, err)
+	}
+	repository.config, err = config.Decode(data, repository.backend.Root)
+	if err != nil {
+		return fmt.Errorf("repository %s .ifttt-lint.yaml: %w", repository.entry.Repo, err)
+	}
+	docstrings := repository.config.PythonDocstringsEnabled()
+	repository.settings = parse.Settings{Syntax: core.NewDirectiveSyntax(repository.config.Directives.Prefix), PythonDocstrings: &docstrings, UnknownPolicy: repository.config.Rules.UnknownDirective}
+	return nil
+}
+
+// Source policies follow the owning snapshot; explicitly supplied CLI flags win.
+func repositoryOptions(repository *snapshot, options engine.Options) engine.Options {
+	cfg := repository.config
+	options.Syntax = &repository.settings.Syntax
+	explicit := options.ConfigOverrides
+	if !explicit["code-only"] {
+		options.CodeOnly = cfg.Rules.CodeOnly
+	}
+	if !explicit["ignore"] {
+		options.Ignores = append([]string{}, cfg.Ignores...)
+	}
+	if !explicit["skip-dir"] {
+		options.SkipDirs = append([]string{}, cfg.SkipDirs...)
+	}
+	if !explicit["parallelism"] {
+		options.Parallelism = 0
+		if n, err := strconv.Atoi(cfg.Parallelism); err == nil {
+			options.Parallelism = n
+		}
+	}
+	options.UnknownPolicy = cfg.Rules.UnknownDirective
+	return options
+}
+
+// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_config, //README.md:snapshot_config)
+
 func deduplicate(findings []core.Finding) []core.Finding {
 	// Complete comparable findings retain severity, suppression and target identity.
 	seen := map[core.Finding]bool{}

@@ -102,6 +102,31 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('--draft',args); self.assertIn('--verify-tag',args)
             self.assertIn(str(self.assets/'SHA256SUMS'),args)
 
+    def test_draft_uses_actual_changelog_notes_instead_of_only_generated_commit_notes(self):
+        release.seal_assets(self.assets)
+        captured = []
+        def invoke(args):
+            captured.append(args)
+            self.assertEqual(Path(args[args.index('--notes-file')+1]).read_text(), '- Actual user-facing change.\n')
+        with patch.object(release, 'get_release', return_value=None), patch.object(release, 'gh', side_effect=invoke):
+            release.create_draft(self.assets, 'acme/ifttt', 'v0.1.0', self.commit, '- Actual user-facing change.\n')
+        self.assertNotIn('--generate-notes', captured[0])
+
+    def test_publication_cli_rejects_draft_asset_changes_even_with_valid_resealed_checksums(self):
+        import shutil
+        (self.root / 'CHANGELOG.md').write_text('## 0.1.0\n\n- Released change.\n')
+        release.seal_assets(self.assets)
+        prepared = self.root / 'prepared'
+        shutil.copytree(self.assets, prepared)
+        (self.assets / release.BINARIES[0]).write_bytes(b'replaced binary')
+        release.seal_assets(self.assets)
+        args = ['release.py', 'publish', '--repository','acme/ifttt','--tag','v0.1.0',
+                '--commit',self.commit,'--assets',str(self.assets),'--prepared',str(prepared)]
+        with patch.object(release, 'ROOT', self.root), patch('sys.argv', args), patch.object(release, 'gh') as gh:
+            with self.assertRaises(SystemExit) as caught: release.main()
+            self.assertEqual(caught.exception.code, 1)
+            gh.assert_not_called()
+
     def test_publication_uses_verified_assets_pinned_identity_and_is_idempotent(self):
         release.seal_assets(self.assets)
         existing = dict(isDraft=True,targetCommitish=self.commit,tagName='v0.1.0')
@@ -165,3 +190,65 @@ class RemoteReleaseStateTests(unittest.TestCase):
             self.assertIsNone(release.get_release('acme/ifttt', 'v0.1.0'))
         with patch.object(release, 'gh', side_effect=denied):
             with self.assertRaises(subprocess.CalledProcessError): release.get_release('acme/ifttt', 'v0.1.0')
+
+
+# LINT.IfChange(release_notes)
+class ReleaseNotesTests(unittest.TestCase):
+    def test_notes_include_only_selected_changelog_and_action_reference(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'CHANGELOG.md').write_text('# Changelog\n\n## Unreleased\n\n- Future work.\n\n## 1.2.3 — 2026-10-05\n\n- Fix linked edits.\n- Ship six binaries.\n\n## 1.2.2 — 2026-09-01\n\n- Older change.\n')
+            notes = release.release_notes(root, 'acme/ifttt', 'v1.2.3')
+            self.assertIn('- Fix linked edits.', notes)
+            self.assertIn('acme/ifttt@v1.2.3', notes)
+            self.assertIn('https://github.com/acme/ifttt/blob/v1.2.3/README.md#github-action-and-hooks', notes)
+            self.assertIn('SHA256SUMS', notes)
+            self.assertNotIn('Future work', notes)
+            self.assertNotIn('Older change', notes)
+            for text in ['# Changelog\n', '## 1.2.3\n\n', '## 1.2.3\n- One\n## 1.2.3\n- Two\n']:
+                (root / 'CHANGELOG.md').write_text(text)
+                with self.subTest(text=text), self.assertRaises(ValueError):
+                    release.release_notes(root, 'acme/ifttt', 'v1.2.3')
+
+    def test_merged_release_selector_requires_exact_commit_and_default_branch(self):
+        commit = 'a' * 40
+        pull = dict(merged_at='2026-10-05', merge_commit_sha=commit, base={'ref':'main'}, labels=[{'name':'release'}])
+        self.assertTrue(release.is_release_commit([pull], commit, 'main'))
+        for values in [dict(merged_at=None), dict(merge_commit_sha='b'*40), dict(base={'ref':'other'}), dict(labels=[])]:
+            with self.subTest(values=values):
+                self.assertFalse(release.is_release_commit([{**pull, **values}], commit, 'main'))
+
+    def test_tag_creation_never_moves_existing_tags_and_distinguishes_auth_errors(self):
+        commit = 'a' * 40
+        with patch.object(release, 'tag_commit', return_value=commit), patch.object(release, 'gh') as gh:
+            release.ensure_tag('acme/ifttt', 'v1.2.3', commit)
+            gh.assert_not_called()
+        with patch.object(release, 'tag_commit', return_value='b'*40), patch.object(release, 'gh') as gh:
+            with self.assertRaises(ValueError): release.ensure_tag('acme/ifttt', 'v1.2.3', commit)
+            gh.assert_not_called()
+        missing = subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 404: Not Found')
+        with patch.object(release, 'tag_commit', side_effect=[missing, commit]), patch.object(release, 'gh') as gh:
+            release.ensure_tag('acme/ifttt', 'v1.2.3', commit)
+            args = gh.call_args.args[0]
+            self.assertIn('POST', args)
+            self.assertIn('ref=refs/tags/v1.2.3', args)
+            self.assertIn(f'sha={commit}', args)
+        denied = subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 403: Forbidden')
+        with patch.object(release, 'tag_commit', side_effect=denied), patch.object(release, 'gh') as gh:
+            with self.assertRaises(subprocess.CalledProcessError): release.ensure_tag('acme/ifttt', 'v1.2.3', commit)
+            gh.assert_not_called()
+    def test_original_artifact_selection_uses_draft_run_identity_and_requires_successful_gate(self):
+        commit = 'a' * 40
+        existing = dict(isDraft=True, targetCommitish=commit, tagName='v1.2.3', body='Changes\n<!-- ifttt-release-run: 12 -->\n')
+        run = {'id':12,'head_sha':'b'*40,'path':'.github/workflows/release.yml'}
+        with patch.object(release, 'get_release', return_value=existing), patch.object(release, 'gh', side_effect=[json.dumps(run), json.dumps({'jobs':[{'name':'draft','conclusion':'success'}]})]):
+            self.assertEqual(release.prepared_run('acme/ifttt', 'v1.2.3', commit), 12)
+        for jobs in [[], [{'name':'draft','conclusion':'failure'}]]:
+            with patch.object(release, 'get_release', return_value=existing), patch.object(release, 'gh', side_effect=[json.dumps(run), json.dumps({'jobs':jobs})]):
+                with self.assertRaises(ValueError): release.prepared_run('acme/ifttt', 'v1.2.3', commit)
+        with patch.object(release, 'get_release', return_value={**existing,'tagName':'v1.2.3-rc.1'}):
+            with self.assertRaises(ValueError): release.prepared_run('acme/ifttt', 'v1.2.3', commit)
+        with patch.object(release, 'get_release', return_value=existing), patch.object(release, 'gh', return_value=json.dumps({**run,'path':'.github/workflows/test.yml'})):
+            with self.assertRaises(ValueError): release.prepared_run('acme/ifttt', 'v1.2.3', commit)
+
+# LINT.ThenChange(//scripts/release.py:release_notes)

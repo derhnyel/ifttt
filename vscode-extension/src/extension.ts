@@ -23,6 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
 		.get<boolean>('verboseLogging', false);
 	const runner = new LintRunner(diagnostics, statusBarItem, outputChannel, verboseLogging);
 	const treeProvider = new FindingsTreeProvider(diagnostics);
+	const hoverProvider = new FindingHoverProvider(diagnostics, outputChannel);
 	const treeView = vscode.window.createTreeView('ifttt.findings', {
 		treeDataProvider: treeProvider
 	});
@@ -86,7 +87,10 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
-	const runCommand = vscode.commands.registerCommand('iftttLint.run', () => runner.run());
+	const runCommand = vscode.commands.registerCommand('iftttLint.run', () => {
+		hoverProvider.clear();
+		return runner.run();
+	});
 	const applyFix = vscode.commands.registerCommand('iftttLint.applyFix', (resource?: vscode.Uri) => {
 		if (isSnapshotMode(resource)) { vscode.window.showErrorMessage('ifttt --fix: change-set snapshots are read-only'); return; }
 		return runner.applyFix(resource);
@@ -121,7 +125,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.languages.registerHoverProvider(
 			{ scheme: 'file' },
-			new FindingHoverProvider(diagnostics)
+			hoverProvider
 		)
 	);
 	context.subscriptions.push(diagnostics.onDidChange(() => treeProvider.refresh()));
@@ -142,6 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
 	applyVerboseSetting();
 
 	subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+		hoverProvider.clear();
 		if (document.uri.scheme !== 'file' || !vscode.workspace.getWorkspaceFolder(document.uri)) { return; }
 		if (vscode.workspace.getConfiguration('iftttLint', document.uri).get<boolean>('runOnSave', true)) {
 			return runner.run(document.uri);
@@ -150,6 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration(event => {
+			if (event.affectsConfiguration('iftttLint')) { hoverProvider.clear(); }
 			if (event.affectsConfiguration('iftttLint.verboseLogging')) {
 				applyVerboseSetting();
 			}

@@ -85,15 +85,19 @@ class HookTests(unittest.TestCase):
         self.assertIn(b'install it before committing', result.stderr)
 
 class DeclarativeHookTests(unittest.TestCase):
+    # LINT.IfChange(pre_commit_hooks)
     def test_prepush_range_pin_and_argument_forwarding(self):
         import os
         import subprocess
         import tempfile
         import shlex
         import json
+        import re
         from pathlib import Path
-        source = (Path(__file__).resolve().parents[1] / '.pre-commit-hooks.yaml').read_text()
-        entry = source.split('  entry: ', 2)[2].splitlines()[0]
+        readme = (Path(__file__).resolve().parents[1] / 'README.md').read_text()
+        source = next(block for block in re.findall(r'```yaml\n(.*?)\n```', readme, re.DOTALL)
+                      if 'repo: local' in block and 'id: ifttt-diff' in block)
+        entry = source.split('entry: ', 2)[2].splitlines()[0]
         command = shlex.split(entry)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -109,6 +113,7 @@ class DeclarativeHookTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             self.assertEqual(json.loads((root / 'captured.json').read_text()), ['--vcs', 'git', '--ignore', 'literal $(touch injected)', '--diff', 'before..after'])
             self.assertFalse((root / 'injected').exists())
+    # LINT.ThenChange(//README.md:pre_commit_hooks)
 
 class ActionTests(unittest.TestCase):
     def test_event_modes_use_git_and_preserve_literal_arguments(self):

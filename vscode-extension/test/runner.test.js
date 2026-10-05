@@ -26,6 +26,22 @@ test('configured command is resolved from PATH before downloading',async () => {
  finally { process.env.PATH = previous; fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
+// LINT.IfChange(default_binary)
+test('blank binary settings resolve the default executable from PATH', async t => {
+ const dir = fs.mkdtempSync(path.join(os.tmpdir(),'ifttt-default-path-'));
+ t.after(() => fs.rmSync(dir,{recursive:true,force:true}));
+ const binary = path.join(dir,process.platform === 'win32' ? 'ifttt.exe' : 'ifttt');
+ fs.writeFileSync(binary,'default executable',{mode:0o755});
+ const previous = process.env.PATH;
+ process.env.PATH = dir;
+ try {
+  for (const setting of ['', '   ', '\t']) {
+   assert.equal(await ensureBinaryPath(setting,'',dir+'-workspace'),binary);
+  }
+ } finally { process.env.PATH = previous; }
+});
+// LINT.ThenChange(//vscode-extension/src/lintRunner.ts:default_binary)
+
 // The runner receives a real Git diff and communicates over stdin with an
 // executable process. Only the VS Code host API is substituted.
 function trustedWorkspace(dir, binary, extra = {}) {
@@ -295,3 +311,16 @@ test('shared-manifest runs publish one identity and older runs cannot restore st
  finishFirst({findings:[{message:'stale',headRevision:'old'}],ok:false,workspaceRoot:setup.first.fsPath,reportId});await pending;
  assert.equal(publications.length,1);assert.equal(publications[0].identity,reportId);assert.equal(publications[0].root,setup.second.fsPath);assert.equal(publications[0].owner,setup.second);
 });
+
+// LINT.IfChange(match_runner)
+test('empty custom diffs still check unchanged Match sections through the real CLI', {timeout:120000}, async t => {
+ const cp=require('node:child_process');const dir=tempWorkspace(t);
+ fs.writeFileSync(path.join(dir,'source.txt'),'// LINT.IfChange(A)\none\n// LINT.ThenChange()\n// LINT.Match(":A", "//target.txt:B")\n');
+ fs.writeFileSync(path.join(dir,'target.txt'),'// LINT.IfChange(B)\ntwo\n// LINT.ThenChange()\n');
+ cp.execFileSync('git',['add','.'],{cwd:dir,timeout:10000});cp.execFileSync('git',['-c','core.hooksPath=','commit','-qm','mismatch baseline'],{cwd:dir,timeout:10000});
+ trustedWorkspace(dir,buildRealCLI(t),{diffCommand:'git diff'});
+ const result=await runner().execute(false);
+ assert.equal(result.ok,false);assert.equal(result.findings.length,1);
+ assert.equal(result.findings[0].ruleId,'match_mismatch');assert.equal(result.findings[0].targetPath,'target.txt');assert.equal(result.findings[0].targetLabel,'B');
+});
+// LINT.ThenChange(//vscode-extension/src/lintRunner.ts:match_runner)
