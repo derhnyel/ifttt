@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -91,6 +93,32 @@ func TestConditionalTargetsInSkippedDirectories(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestConditionalTargetExclusionsUseConfigurationCoordinates(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "examples")
+	if err := os.Mkdir(child, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"source.go": "// SENTRY.RequireAll([\"target.go#API\"])\nbody\n",
+		"target.go": "body without the required label\n",
+	} {
+		if err := os.WriteFile(filepath.Join(child, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(child)
+	opts := Options{StructuralFiles: []string{"source.go"}}
+	if result, code := Lint("", opts); code != 1 || !hasRule(result, "source.go", "label_missing") {
+		t.Fatalf("missing target label was not checked: %+v", result.Findings)
+	}
+	opts.Ignores = []string{"**/target.go#API"}
+	opts.IgnoreBaseDir = root
+	if result, code := Lint("", opts); code != 0 || len(result.Findings) != 0 {
+		t.Fatalf("configuration-relative target exclusion was lost: %+v", result.Findings)
 	}
 }
 

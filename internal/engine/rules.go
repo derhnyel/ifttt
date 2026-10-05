@@ -16,7 +16,7 @@ type conditionalRule struct {
 
 func evaluateConditionalRule(rule conditionalRule, changes map[string]*core.FileChanges, labels map[string]map[string]core.LineRange, files FileProvider, factories []FileProviderFactory, codeOnly bool, ignored func(core.TargetRef) bool, emit func(core.Finding), lookup func(string) (*core.FileChanges, error), syn core.DirectiveSyntax, suppress ...bool) {
 	// LINT.IfChange(conditional_source_trigger)
-	// Directory exclusions are a separate target policy, not change evidence.
+	// Configured path/label exclusions are a separate policy, not change evidence.
 	source := changes[rule.src]
 	triggered := source != nil && !source.Deleted && !(len(suppress) > 0 && suppress[0])
 	if triggered {
@@ -38,6 +38,7 @@ func evaluateConditionalRule(rule conditionalRule, changes map[string]*core.File
 		// Snapshot configuration can invalidate a selector without changing its
 		// source or target body. Validate structure even when edit checks are inactive.
 		// Editor/build targets are eligible unless the caller explicitly skips them.
+		// The ignored callback resolves config-relative target exclusions first.
 		provider, actual, readErr := fileProviderForPath(files, factories, target.Path)
 		if readErr == nil {
 			_, readErr = provider.ReadFile(actual)

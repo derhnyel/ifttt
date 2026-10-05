@@ -10,6 +10,8 @@ The tool checks for required edits. Tests and review must check whether the edit
 - [Quick start](#quick-start)
 - [VS Code extension](#vs-code-extension)
 - [CLI](#cli)
+- [Usage examples](#usage-examples)
+- [Configuration](#configuration)
 - [GitHub Action and hooks](#github-action-and-hooks)
 - [Coding agents](#coding-agents)
 - [Cross-repository checks](#cross-repository-change-sets)
@@ -85,7 +87,7 @@ ifttt --scan .                           # discover and validate directive files
 ifttt --doctor                           # report orphan directives
 ifttt patch.diff                         # unified diff file
 git diff --cached | ifttt -              # unified diff on stdin
-ifttt --change-set changes.yaml --format=json
+ifttt --change-set .ifttt-changes.yaml --format=json
 ```
 
 Git and jj commands find the repository root from a subdirectory. Patch files and stdin use the current directory. Run those commands at the repository root.
@@ -222,6 +224,7 @@ Inside an IfChange block, `RequireAny`, `RequireAll` and `ForbidChange` apply wh
 
 <!-- LINT.IfChange(conditional_target_structure) -->
 Their target files and labels must exist, even when the source did not change or required-edit checks are suppressed. Configured ignores and skipped directories exclude targets. Editor and build directories are eligible by default. Git ignore rules do not suppress explicitly linked targets. A config change does not count as an edit to a target section.
+Scan checks keep exclusion patterns relative to their configuration directory, even when you run from a subdirectory.
 <!-- LINT.ThenChange(//internal/engine/rules.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure) -->
 
 Targets can select a file or a labelled section, such as `//one.go:API`. Extended `Label` names can use `#` selectors, such as `//one.go#API`.
@@ -274,8 +277,201 @@ Git uses one fixed-string query to find Match sources. It reuses the query for r
 
 <!-- LINT.ThenChange(//internal/engine/match.go:match_contract, //internal/parse/match.go:match_contract, //test/integration/match_test.go:match_contract, //cmd/ifttt/main.go:match_rules) -->
 
+### Usage examples
+
+Start with the [quick start](#quick-start). Use these examples when you need more than one link.
+Each example is independent. Create the named files, commit a baseline, then make the described edits.
+
 <details>
-<summary>Supported files, configuration and remote references</summary>
+<summary>Nested blocks, multiple targets and same-file links</summary>
+
+<!-- LINT.IfChange(readme_nested) -->
+**api.go**
+
+<!-- example: nested-api -->
+```go
+/* LINT.IfChange(API) */
+const apiName = "example"
+// LINT.IfChange(VERSION)
+const apiVersion = 2
+// LINT.ThenChange(//docs/api.md:VERSION)
+/*
+ * LINT.ThenChange(
+ *   //docs/api.md:API,
+ *   //client.go
+ * )
+ */
+```
+
+**docs/api.md**
+
+<!-- example: nested-guide -->
+```markdown
+<!-- LINT.Label("API") -->
+API name: example
+<!-- LINT.Label("VERSION") -->
+API version: 2
+<!-- LINT.EndLabel -->
+<!-- LINT.EndLabel -->
+```
+
+Create `client.go` with `const clientVersion = 2`.
+Changing `apiVersion` requires an edit inside `VERSION` in the guide and an edit to `client.go`.
+The inner block is also part of the outer block.
+Changing only `apiName` requires an edit inside `API` in the guide and an edit to `client.go`.
+Editing the guide alone does not require an API edit because `Label` creates no outgoing link.
+
+For a link in both directions, give each section a target. This example uses two labels in **local.go**:
+
+<!-- example: same-file -->
+```go
+// LINT.IfChange(SERVER)
+const serverPort = 8080
+// LINT.ThenChange(:CLIENT)
+
+// LINT.IfChange(CLIENT)
+const clientPort = 8080
+// LINT.ThenChange(:SERVER)
+```
+
+Changing either port requires an edit to the other section. `:CLIENT` and `:SERVER` select labels in the same file.
+An unlabelled source can use `LINT.IfChange` and a nonempty `LINT.ThenChange(...)` target list.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:readme_nested) -->
+
+</details>
+
+<details>
+<summary>Require all targets, choose one target, or forbid an edit</summary>
+
+<!-- LINT.IfChange(readme_conditional) -->
+Combine rules inside a small source block in **api.go**:
+
+<!-- example: conditional-api -->
+```go
+// LINT.IfChange(API)
+// LINT.RequireAll(["//client.go:API", "//tests.go:API"])
+// LINT.RequireAny(["//migration-a.sql", "//migration-b.sql"])
+// LINT.ForbidChange("//generated.go")
+const apiVersion = 2
+// LINT.ThenChange(//guide.md:API)
+```
+
+Create an `API` target section in `client.go`, `tests.go` and `guide.md`, as shown in the quick start.
+Create both migration files and `generated.go` before the baseline commit.
+When `apiVersion` changes, this combination requires:
+
+- An edit inside `API` in both `client.go` and `tests.go`.
+- An edit to at least one migration file.
+- An edit inside `API` in `guide.md`.
+- No edit to `generated.go`.
+
+Use file targets for any edit in a file. Use labelled targets for an edit inside a specific section.
+An unrelated edit outside the required section does not satisfy the rule.
+Put conditional directives outside all IfChange blocks to apply them when any part of the source file changes.
+For example, `LINT.RequireAll(["//tests.go:API"])` before the opening comment requires a test edit for any source edit.
+The tool checks target files and labels even when the source does not change.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:readme_conditional) -->
+
+</details>
+
+<details>
+<summary>Match exact text or extract values from different formats</summary>
+
+<!-- LINT.IfChange(readme_matching) -->
+For exact text, create these files.
+
+**message.txt**
+
+<!-- example: match-message -->
+```text
+// LINT.Label("MESSAGE")
+Try again.
+// LINT.EndLabel
+// LINT.Match(":MESSAGE", "//copy.txt:MESSAGE")
+```
+
+**copy.txt**
+
+<!-- example: match-copy -->
+```text
+// LINT.IfChange(MESSAGE)
+Try again.
+// LINT.ThenChange()
+```
+
+Changing only one message produces `match_mismatch`. Both section types work as Match targets.
+Exact matching includes spaces and blank lines. Put the Match directive outside the compared sections.
+
+To compare a version across Go and YAML, use one regex capture group.
+
+**version.go**
+
+<!-- example: match-version -->
+```go
+// LINT.Label("VERSION")
+const version = "1.2.3"
+// LINT.EndLabel
+// LINT.Match(":VERSION", "//package.yaml:VERSION", '([0-9]+\.[0-9]+\.[0-9]+)')
+```
+
+**package.yaml**
+
+<!-- example: match-package -->
+```yaml
+# LINT.Label("VERSION")
+version: 1.2.3
+# LINT.EndLabel
+```
+
+The check compares `1.2.3` and ignores the surrounding Go/YAML syntax.
+A regex without a capture group compares the complete matches. Multiple values must occur in the same order.
+See [regex rules](#match-section-contents) for invalid patterns and missing values.
+Combine Match with IfChange/ThenChange when you need both required edits and equal contents.
+Match checks equality even with an empty diff. It cannot prove that two implementations behave the same way.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:readme_matching) -->
+
+</details>
+
+<details>
+<summary>Suppress one rule for a section, a file or a revision range</summary>
+
+<!-- LINT.IfChange(readme_suppression) -->
+Use rule IDs from findings. This example suppresses `then_missing` only for the experimental block in **api.go**:
+
+<!-- example: suppression-api -->
+```go
+// LINT.Disable("then_missing")
+// LINT.IfChange(EXPERIMENTAL)
+const experimentalVersion = 2
+// LINT.ThenChange(//guide.md)
+// LINT.Enable("then_missing")
+
+// LINT.IfChange(STABLE)
+const stableVersion = 2
+// LINT.ThenChange(//guide.md)
+```
+
+Create `guide.md` before the baseline commit.
+Changing both constants without a guide edit reports the stable block only.
+Other rule IDs still apply. To suppress this rule throughout the file, add `// LINT.Ignore("then_missing")`.
+Different rule IDs can have overlapping `Disable` scopes. A remaining `Disable("all")` still suppresses rules after an individual `Enable`.
+Use `ifttt --vcs git --list-suppressed` to inspect suppressed findings.
+
+For a deliberate exception in a native revision range, include `NO_IFTTT=reason` in a commit message:
+
+```sh
+git commit -m 'Refactor comments. NO_IFTTT=no contract change'
+ifttt --vcs git --diff main...HEAD
+```
+
+The marker suppresses required-edit checks for the whole range. Structure, stale-reference and Match checks still run.
+Change-set mode does not use commit-message suppression.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:readme_suppression) -->
+
+</details>
+
+<details>
+<summary>Supported files and comment formats</summary>
 
 ### Supported files
 
@@ -298,15 +494,26 @@ IFTTT Lint reads Python docstring directives by default. Set `languages.python_d
 
 IFTTT Lint supports nested IfChange blocks and directives in inline and block comments. It ignores strings and Markdown fenced examples.
 
+</details>
+
 ### Configuration
 
-Create `.ifttt-lint.yaml` in your project:
+<details>
+<summary>Config example, all options, overrides and custom prefixes</summary>
 
+<!-- LINT.IfChange(readme_configuration) -->
+Create `.ifttt-lint.yaml` for lint settings. The tool loads this filename automatically.
+Create a separate [change-set manifest](#cross-repository-change-sets) to select repository revisions. Its filename is your choice.
+
+<!-- example: configuration -->
 ```yaml
 parallelism: auto
 verbose: false
 ignores:
   - third_party/**
+  - 'examples/demo.go#EXPERIMENTAL'
+directives:
+  prefix: LINT
 languages:
   python_docstrings: true
 rules:
@@ -318,16 +525,65 @@ output:
   path: ""
 ```
 
+Omit keys that use the defaults you need.
+
+| Key | Values / default | Purpose |
+| --- | --- | --- |
+| `parallelism` | `auto` (2 workers), or a positive integer | Set the number of workers. |
+| `verbose` | `false` | Show debug logs. |
+| `ignores` | File globs or `file#label`, empty by default | Exclude files or specific labels. Quote patterns that start with `*`. |
+| `skip_directories` | [Default skips](#commands), or your directory list | Replace the built-in directory skips. Lists from config layers merge. |
+| `directives.prefix` | `LINT` | Set the directive prefix for this repository. |
+| `languages.python_docstrings` | `true` | Read directives inside Python docstrings. |
+| `rules.unknown_directive` | `error` by default, `warn`, `ignore` | Handle malformed or unknown directives. |
+| `rules.combined_diff` | `skip_with_note`, `error`, `ignore`, `parent` | Handle combined merge diffs. |
+| `rules.code_only` | `false` | Ignore comment/whitespace-only edits when deciding whether a source block changed. |
+| `output.format` | `text`, `json`, `sarif`, `diagnostic-ls` | Select the report format. |
+| `output.path` | Empty (standard output), or a filename | Write the report to a file. |
+| `remotes[].type` | `github` | Select the remote provider. |
+| `remotes[].repo` | Required `owner/name` | Identify the remote repository. |
+| `remotes[].default_ref` | `main`, or a branch/tag/commit | Select a revision when the URI has no `?ref=`. |
+| `remotes[].token_env` | Optional environment variable name | Read a token without storing it in YAML. |
+| `remotes[].base_url` | GitHub API by default | Use a GitHub Enterprise API URL. |
+| `remotes[].name` | Optional name | Name the config entry. References still select it by `repo`. |
+
 The tool reads configuration from parent directories to the current directory. Child settings override parent settings. Ignore and skip lists merge.
 
 Relative entries use the directory containing their configuration file. The tool normalizes them against the highest configuration directory. Explicit `verbose: false` and `rules.code_only: false` disable inherited values. CLI flags override configuration, including `--code-only=false` and `--verbose=false`.
 
-Additional YAML keys:
+For a child config, keep only the settings that differ. For example, **examples/.ifttt-lint.yaml** can contain:
 
-- `skip_directories`: directories to exclude.
-- `directives.prefix`: custom directive prefix. The default is `LINT`.
-- `output.path`: file to receive the report.
-- Remote provider `base_url`: GitHub Enterprise API endpoint.
+<!-- example: child-configuration -->
+```yaml
+verbose: false
+ignores: ['generated/**']
+rules:
+  code_only: false
+```
+
+Run from `examples/` to apply that layer. Its ignore pattern selects `examples/generated/**`.
+To add directory skips, include the default skips you want to keep, such as `skip_directories: [.git, .jj, node_modules, vendor, generated]`.
+
+For a custom prefix, set `directives: {prefix: SPEC}`. Its IfChange/ThenChange syntax uses quoted arguments:
+
+<!-- example: custom-prefix -->
+```go
+// SPEC.IfChange("API")
+const version = 2
+// SPEC.ThenChange(["./guide.md#API", "./tests.go#API"])
+```
+
+Use `SPEC.Label("API")` and `SPEC.EndLabel` for named target sections.
+Custom-prefix local paths are relative to the source directory. Use `#API` for the same file or `file#API` for another file.
+Other extended directives use the same quoted argument forms.
+Custom comment formats use a CLI option, such as `ifttt --scan . --comment-style '.tmpl=##'`.
+Config does not have a `comment_style` key.
+<!-- LINT.ThenChange(//cmd/ifttt/main.go:readme_configuration, //test/integration/readme_examples_test.go:readme_configuration) -->
+
+</details>
+
+<details>
+<summary>Check a GitHub target without a change set</summary>
 
 ### Remote references
 
@@ -349,7 +605,7 @@ remotes:
 
 Or repeat `--remote repo=your-org/your-repo,default_ref=main,token_env=GITHUB_TOKEN` on the CLI. `IFTTT_CACHE_DIR` selects a cache directory.
 
-An existing remote target does not prove that someone updated it. To check matching edits, use `--change-set changes.yaml` with local Git/jj checkouts and explicit base/head revisions. This mode needs no GitHub credentials or network fetches. See [cross-repository change sets](#cross-repository-change-sets).
+An existing remote target does not prove that someone updated it. To check matching edits, use `--change-set .ifttt-changes.yaml` with local Git/jj checkouts and explicit base/head revisions. This mode needs no GitHub credentials or network fetches. See [cross-repository change sets](#cross-repository-change-sets).
 
 </details>
 
@@ -443,7 +699,9 @@ API version: v2
 <!-- LINT.ThenChange() -->
 ```
 
-Declare both checkout roots in `changes.yaml`. Git and jj can participate in the same manifest:
+Declare both checkout roots in `.ifttt-changes.yaml`. This manifest selects revisions. It does not replace `.ifttt-lint.yaml`.
+The filename is your choice. The tool reads it only when you pass `--change-set`.
+Git and jj can participate in the same manifest:
 
 ```yaml
 version: 1
@@ -461,8 +719,112 @@ repositories:
 ```
 
 ```sh
-ifttt --change-set changes.yaml --format=json
+ifttt --change-set .ifttt-changes.yaml --format=json
 ```
+
+| Manifest field | Meaning |
+| --- | --- |
+| `version` | Use `1`. |
+| `repositories[].repo` | An `owner/name` ID that matches your `github://` targets. These IDs do not need a GitHub account or remote. |
+| `repositories[].path` | Checkout root, relative to the manifest file or absolute. |
+| `repositories[].vcs` | `git`, `jj`, or `auto` (default). |
+| `repositories[].base` | One local commit before the changes. |
+| `repositories[].head` | One local commit after the changes. |
+
+<details>
+<summary>Complete example: two repositories, different prefixes, linked edits and matching values</summary>
+
+<!-- LINT.IfChange(readme_crossrepo) -->
+Create sibling repositories named `api` and `contracts`. Use Git for both in this example.
+The IDs `acme/api` and `acme/contracts` identify these local checkouts. The checker makes no network request.
+
+**api/source.go**
+
+<!-- example: crossrepo-api -->
+```go
+// LINT.IfChange(API)
+const apiVersion = 2
+// LINT.ThenChange(github://acme/contracts/contract.go#API)
+// LINT.Match(":API", "github://acme/contracts/contract.go#API", '([0-9]+)')
+```
+
+**contracts/.ifttt-lint.yaml**
+
+<!-- example: crossrepo-config -->
+```yaml
+directives:
+  prefix: SPEC
+ignores: ['generated/**']
+```
+
+**contracts/contract.go**
+
+<!-- example: crossrepo-contract -->
+```go
+// SPEC.Label("API")
+const contractVersion = 2
+// SPEC.EndLabel
+// SPEC.RequireAll(["github://acme/api/source.go#API"])
+```
+
+The API block requires a contract section edit. The contract file requires an API section edit when it changes.
+Match also requires the two version numbers to be equal. Each repository uses its own committed prefix and exclusions.
+
+Commit these files in both repositories. Create **.ifttt-changes.yaml** beside the checkout directories:
+
+<!-- example: crossrepo-manifest -->
+```yaml
+version: 1
+repositories:
+  - repo: acme/api
+    path: ./api
+    vcs: git
+    base: '<api-base-commit>'
+    head: '<api-head-commit>'
+  - repo: acme/contracts
+    path: ./contracts
+    vcs: git
+    base: '<contracts-base-commit>'
+    head: '<contracts-head-commit>'
+```
+
+Replace each placeholder with a commit ID. Read the current ID with `git -C api rev-parse HEAD` or `git -C contracts rev-parse HEAD`.
+For the first check, use each repository's baseline ID for both its base and head.
+
+```sh
+ifttt --change-set .ifttt-changes.yaml --format=json
+```
+
+Try these cases. Keep the base IDs fixed and update the head IDs after each commit.
+
+| Changes | Result |
+| --- | --- |
+| Neither repository changes, both values are `2`. | Passes. Match still runs. |
+| Commit `apiVersion = 3` only. | Reports a missing contract edit and a Match mismatch. |
+| Save `contractVersion = 3` without committing it. | Still fails. Dirty files do not count. |
+| Commit `contractVersion = 3` and select that head. | Passes. Both sections changed and their values match. |
+| Edit only an unrelated line in the contract file. | Does not satisfy the API's labelled dependency. |
+| Change both values but set them to different numbers. | Linked edits pass, but Match fails. |
+
+To use jj for either checkout, set its `vcs` to `jj`. Select one revision for each base and head.
+Read the current jj commit ID with `jj log -r @ --no-graph -T 'commit_id'`.
+Git refs and jj revsets must resolve locally. Pin full commit IDs for a repeatable result.
+
+Conditional targets can also mix local and remote paths:
+
+```go
+// LINT.RequireAny(["github://acme/contracts/contract.go#API", "//fallback.go:API"])
+// LINT.RequireAll(["github://acme/contracts/contract.go#API", "//tests.go:API"])
+// LINT.ForbidChange("github://acme/contracts/generated.go")
+```
+
+Use the rules your contract needs. Create every target file and label before checking.
+All referenced repositories must appear in the manifest, including optional RequireAny candidates.
+An optional URI `?ref=<commit-id>` must match the target repository's selected head.
+Use [ordinary remote references](#remote-references) when you only need to check that a GitHub target exists.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:readme_crossrepo) -->
+
+</details>
 
 <details>
 <summary>Change-set rules and limitations</summary>
@@ -512,7 +874,7 @@ Prepare each declared checkout with both revisions. Then run the Action. Replace
 ```yaml
 - uses: derhnyel/ifttt@<ref>
   with:
-    change-set: changes.yaml
+    change-set: .ifttt-changes.yaml
     args: --format=json
 ```
 
