@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -126,6 +127,9 @@ with tempfile.TemporaryDirectory(prefix='ifttt-host-') as temporary:
                     '--extensionDevelopmentPath=' + str(extension),
                     '--extensionTestsPath=' + str(extension / 'test/host'),
                     str(workspace)]
+    if sys.platform.startswith('linux'):
+        # Match vscode-test's sandbox flags and use software rendering under Xvfb.
+        command[1:1] = ['--no-sandbox', '--disable-gpu-sandbox', '--disable-gpu']
     # Native macOS VS Code can keep its application process alive after the test
     # extension host exits. Completion is the explicit assertion result, not an
     # unrelated application lifecycle event.
