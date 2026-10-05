@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1 — 2026-10-06
+
 - Parse remote comments using the target file path when a GitHub reference selects a branch, tag or commit.
 
 - Split detailed usage into linked guides. Document branch, tag and commit references and test the published examples with Git and jj. Cover three-repository chains, mixed local/remote conditions and committed suppression.
