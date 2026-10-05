@@ -1,0 +1,184 @@
+{
+  "name": "ifttt-lint-helper",
+  "displayName": "IFTTT Lint Helper",
+  "description": "Run iflint in VS Code and highlight required cross-file updates.",
+  "version": "0.1.0",
+  "publisher": "derhnyel",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/derhnyel/ifttt.git"
+  },
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:iftttLint.run",
+    "onCommand:iftttLint.openFinding",
+    "onCommand:iftttLint.openTarget",
+    "onCommand:iftttLint.jumpToLabel",
+    "onCommand:iftttLint.scaffoldDirective",
+    "onCommand:iftttLint.applyFix"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "iftttLint.run",
+        "title": "IFTTT Lint: Run"
+      },
+      {
+        "command": "iftttLint.openFinding",
+        "title": "IFTTT Lint: Open Finding"
+      },
+      {
+        "command": "iftttLint.openTarget",
+        "title": "IFTTT Lint: Open Target"
+      },
+      {
+        "command": "iftttLint.jumpToLabel",
+        "title": "IFTTT Lint: Jump To Label"
+      },
+      {
+        "command": "iftttLint.scaffoldDirective",
+        "title": "IFTTT Lint: Scaffold Directive"
+      },
+      {
+        "command": "iftttLint.applyFix",
+        "title": "IFTTT Lint: Apply --fix"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "iflint.findings",
+          "name": "IFLint Findings"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "IFTTT Lint",
+      "properties": {
+        "iftttLint.changeSet": {
+          "type": "string",
+          "default": "",
+          "description": "Optional change-set YAML manifest resolved from workingDirectory. Validates immutable repository snapshots in read-only mode.",
+          "scope": "resource"
+        },
+        "iftttLint.diffCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom shell command producing a Git-format diff. Empty uses the native Git/jj backend.",
+          "scope": "resource"
+        },
+        "iftttLint.binary": {
+          "type": "string",
+          "default": "iflint",
+          "description": "Path or PATH command name of the installed iflint executable.",
+          "scope": "resource"
+        },
+        "iftttLint.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "--format=json"
+          ],
+          "description": "Extra CLI arguments passed to ifttt-lint.",
+          "scope": "resource"
+        },
+        "iftttLint.workingDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Optional working directory. Defaults to the active editor workspace folder, then the first folder.",
+          "scope": "resource"
+        },
+        "iftttLint.skipDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git",
+            ".jj",
+            ".hg",
+            ".svn"
+          ],
+          "description": "Directories to skip when the CLI walks the filesystem (passed as --skip-dir).",
+          "scope": "resource"
+        },
+        "iftttLint.verboseLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose logging in the IFLint output channel (shows debug messages)."
+        },
+        "iftttLint.runOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to invoke the linter automatically after each save.",
+          "scope": "resource"
+        },
+        "iftttLint.downloadBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Optional HTTPS release URL serving platform iflint binaries and SHA256SUMS. Downloads require checksum verification. Disabled by default.",
+          "scope": "resource"
+        },
+        "iftttLint.vcs": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "git",
+            "jj"
+          ],
+          "default": "auto",
+          "description": "Native VCS backend. Auto prefers jj in co-located repositories.",
+          "scope": "resource"
+        },
+        "iftttLint.revision": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Git revision/range or jj revset to lint. Cannot be combined with staged mode.",
+          "scope": "resource"
+        },
+        "iftttLint.diffMode": {
+          "type": "string",
+          "enum": [
+            "working-tree",
+            "staged"
+          ],
+          "default": "working-tree",
+          "description": "Native diff selection. Staged is supported only by Git; jj uses its working-copy change.",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "lint": "tsc -p ./ --noEmit",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "node -e \"require('node:fs').copyFileSync('../README.md', 'README.md')\" && npm run compile",
+    "test": "npm run compile && node --test test/*.test.js",
+    "package:local": "vsce package --no-dependencies --allow-missing-repository --skip-license"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/vscode": "^1.88.0",
+    "@vscode/vsce": "^4.0.0",
+    "typescript": "^5.4.2"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "IFLint executes workspace commands and can modify directive targets."
+    },
+    "virtualWorkspaces": false
+  },
+  "license": "MIT",
+  "author": "Daniel Eje"
+}
