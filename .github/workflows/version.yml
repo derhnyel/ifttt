@@ -1,0 +1,66 @@
+name: Prepare Version
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version change (opens a release PR; never pushes to main)
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+permissions:
+  contents: read
+concurrency:
+  group: prepare-version
+  cancel-in-progress: false
+jobs:
+  version:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Use optional release PR credential for the branch push
+        env:
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_PR_TOKEN" ]]; then exit 0; fi
+          auth="$(printf 'x-access-token:%s' "$RELEASE_PR_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git config http.https://github.com/.extraheader "AUTHORIZATION: basic $auth"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Prepare version PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          tag="$(python3 scripts/prepare_version.py "$BUMP")"
+          branch="release/$tag"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo 'A version PR already exists; review it before preparing another.' >&2
+            exit 1
+          fi
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md vscode-extension/package.json vscode-extension/package-lock.json
+          git commit -m "release: prepare $tag"
+          git push origin "HEAD:refs/heads/$branch"
+          cat > "$RUNNER_TEMP/release-pr.md" <<'NOTES'
+          Updates the extension version, npm lockfile and dated changelog together.
+
+          Merging this release-labelled PR starts all release checks, builds six binaries and a licensed VSIX, and publishes after the release environment approval. Existing version tags are never moved. VS Code Marketplace publishing stays optional.
+          NOTES
+          gh pr create --repo "$REPOSITORY" --base "$DEFAULT_BRANCH" --head "$branch" \
+            --title "Release $tag" --body-file "$RUNNER_TEMP/release-pr.md" --label release
+          printf '%s\n' 'Review and approve any GitHub-requested bot PR workflow runs, then merge after CI and Lint pass.' >> "$GITHUB_STEP_SUMMARY"
