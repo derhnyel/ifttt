@@ -1,0 +1,38 @@
+.cache
+*node_modules/
+*gocache/
+*.log
+*.tmp
+.DS_Store
+.vscode/
+.idea/
+*.env
+*.out
+*.cpu
+*.mem
+*.prof
+*.test
+*.vsix
+
+/build/
+/iflint
+/test/.iflint-smoke
+/vscode-extension/dist/
+
+__pycache__/
+*.py[cod]
+
+# Local scratch space and accidentally generated documentation reports.
+/.local/
+/docs/benchmarks/
+/vscode-extension/LICENSE
+/vscode-extension/README.md
+
+# Agent plans and specs are local working notes, not public project docs.
+/docs/superpowers/
+/.superpowers/
+
+# Local environment overrides; retain templates in source control.
+.env.*
+!.env.example
+!.env.sample
