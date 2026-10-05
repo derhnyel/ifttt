@@ -69,6 +69,7 @@ def fixture(root, pairs, paired):
     for checkout in (source, target):
         checkout.mkdir()
         git(checkout, '-c', 'init.defaultBranch=main', 'init', '-q', '--object-format=sha1')
+        (checkout / '.ifttt-lint.yaml').write_text('directives:\n  prefix: SENTRY\n')
     def source_content(index, changed):
         return (f'// SENTRY.IfChange("API")\nvar source = {int(changed)}\n'
                 f'// SENTRY.ThenChange("github://acme/target/target_{index}.go#API")\n')

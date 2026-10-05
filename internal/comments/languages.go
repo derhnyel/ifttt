@@ -71,6 +71,7 @@ func registerBuiltinLanguages() {
 	register(".tpl .gotmpl .gohtml .tmpl", grammar{blocks: []commentDelimiter{{"{{/*", "*/}}", false}}})
 	for _, ext := range []string{".py", ".pyi", ".pyw", ".bzl"} {
 		registerLanguage(ext, python, true)
+		pythonExtractors[ext] = true
 		registerCommentFormat(ext, commentDelimiter{open: "#"})
 	}
 	for _, ext := range []string{".md", ".mdx", ".markdown"} {

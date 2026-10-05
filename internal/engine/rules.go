@@ -14,30 +14,50 @@ type conditionalRule struct {
 	ifLine, thenLine int
 }
 
-func evaluateConditionalRule(rule conditionalRule, changes map[string]*core.FileChanges, labels map[string]map[string]core.LineRange, files FileProvider, factories []FileProviderFactory, codeOnly bool, ignored func(core.TargetRef) bool, emit func(core.Finding), lookup func(string) (*core.FileChanges, error)) {
+func evaluateConditionalRule(rule conditionalRule, changes map[string]*core.FileChanges, labels map[string]map[string]core.LineRange, files FileProvider, factories []FileProviderFactory, codeOnly bool, ignored func(core.TargetRef) bool, emit func(core.Finding), lookup func(string) (*core.FileChanges, error), syn core.DirectiveSyntax, suppress ...bool) {
+	// LINT.IfChange(conditional_source_trigger)
 	source := changes[rule.src]
-	if source == nil || source.Deleted {
-		return
-	}
-	if rule.ifLine > 0 {
-		if !pairTriggered(pairInfo{ifLine: rule.ifLine, thenLine: rule.thenLine}, source, codeOnly) {
-			return
-		}
-	} else {
-		if len(source.AddedLines)+len(source.RemovedLines) == 0 {
-			return
-		}
-		if codeOnly && onlyCommentChanges(source, 1, int(^uint(0)>>1)-1) {
-			return
+	triggered := source != nil && !source.Deleted && !(len(suppress) > 0 && suppress[0])
+	if triggered {
+		if rule.ifLine > 0 {
+			triggered = pairTriggered(pairInfo{ifLine: rule.ifLine, thenLine: rule.thenLine}, source, codeOnly)
+		} else {
+			triggered = len(source.AddedLines)+len(source.RemovedLines) > 0 && (!codeOnly || !onlyCommentChanges(source, 1, int(^uint(0)>>1)-1))
 		}
 	}
+	// LINT.ThenChange(//test/integration/change_set_test.go:conditional_target_structure, //internal/engine/conditional_structure_test.go:conditional_target_structure)
 	var missing []string
 	satisfied, total := 0, 0
 	for _, raw := range targetsOf(rule.directive) {
-		target := resolveTarget(rule.src, raw)
+		target := resolveTarget(rule.src, raw, syn)
 		if ignored(target) {
 			continue
 		}
+		// LINT.IfChange(conditional_target_structure)
+		// Snapshot configuration can invalidate a selector without changing its
+		// source or target body. Validate structure even when edit checks are inactive.
+		provider, actual, readErr := fileProviderForPath(files, factories, target.Path)
+		if readErr == nil {
+			_, readErr = provider.ReadFile(actual)
+		}
+		if readErr != nil {
+			// Labelled targets already report read errors during directive loading.
+			if target.Label == "" {
+				f := errFinding(rule.src, rule.directive.Line, readErr)
+				f.TargetPath = target.Path
+				emit(f)
+			}
+		} else if target.Label != "" {
+			if _, ok := labels[target.Path][target.Label]; !ok {
+				f := finding("label_missing", rule.src, rule.directive.Line, fmt.Sprintf("label '%s' not found in '%s'", target.Label, target.Path))
+				f.TargetPath, f.TargetLabel = target.Path, target.Label
+				emit(f)
+			}
+		}
+		if !triggered {
+			continue
+		}
+		// LINT.ThenChange(//internal/engine/engine.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure, //internal/engine/conditional_structure_test.go:conditional_target_structure, //README.md:conditional_target_structure)
 		total++
 		changed, lookupErr := lookup(target.Path)
 		if lookupErr != nil {
@@ -63,11 +83,7 @@ func evaluateConditionalRule(rule conditionalRule, changes map[string]*core.File
 			}
 			continue
 		}
-		provider, actual, err := fileProviderForPath(files, factories, target.Path)
-		if err == nil {
-			_, err = provider.ReadFile(actual)
-		}
-		if err != nil {
+		if readErr != nil {
 			touched = false
 		}
 		if touched {
@@ -157,7 +173,10 @@ func workerLimit(n int) int {
 }
 
 func hasRemovedDirective(fc *core.FileChanges) bool {
-	syn := core.CurrentDirectiveSyntax()
+	syn := core.NewDirectiveSyntax(fc.DirectivePrefix)
+	if fc.DirectivePrefix == "" {
+		syn = core.CurrentDirectiveSyntax()
+	}
 	for _, text := range fc.RemovedInNew {
 		if strings.Contains(text, syn.TokenIfChange) || strings.Contains(text, syn.TokenLabel) {
 			return true
@@ -166,11 +185,11 @@ func hasRemovedDirective(fc *core.FileChanges) bool {
 	return false
 }
 
-func emptyGoogleBlock(begin, end core.LintDirective) bool {
-	return core.CurrentDirectiveSyntax().Prefix == "LINT" && begin.Label == "" && len(targetsOf(end)) == 0
+func emptyGoogleBlock(begin, end core.LintDirective, syntax ...core.DirectiveSyntax) bool {
+	return syntaxOrDefault(syntax...).Prefix == "LINT" && begin.Label == "" && len(targetsOf(end)) == 0
 }
 
-func invalidGoogleDriveTarget(raw string) bool {
-	return core.CurrentDirectiveSyntax().Prefix == "LINT" && !isRemotePath(raw) && len(raw) >= 3 &&
+func invalidGoogleDriveTarget(raw string, syntax ...core.DirectiveSyntax) bool {
+	return syntaxOrDefault(syntax...).Prefix == "LINT" && !isRemotePath(raw) && len(raw) >= 3 &&
 		((raw[0] >= 'a' && raw[0] <= 'z') || (raw[0] >= 'A' && raw[0] <= 'Z')) && raw[1] == ':' && (raw[2] == '/' || raw[2] == '\\')
 }

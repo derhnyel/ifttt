@@ -23,7 +23,7 @@ export class FindingCodeLensProvider implements vscode.CodeLensProvider {
 			}
 			const range = new vscode.Range(Math.max(finding.line - 1, 0), 0, Math.max(finding.line - 1, 0), 0);
 			const targetAbs = this.resolveTarget(root, finding.targetPath);
-			const targetLabel = finding.headRevision || finding.ruleId === 'label_ambiguous' ? undefined : finding.targetLabel;
+			const targetLabel = finding.headRevision || ['label_ambiguous', 'match_label_ambiguous'].includes(finding.ruleId) ? undefined : finding.targetLabel;
 			const command = targetLabel ? 'iftttLint.jumpToLabel' : 'iftttLint.openTarget';
 			const args = [targetAbs, targetLabel ?? null, finding.ownerUri ?? document.uri];
 			const label = targetLabel

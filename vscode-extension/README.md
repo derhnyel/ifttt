@@ -3,7 +3,7 @@
 IFTTT Lint catches forgotten updates to related code, tests and documentation in your editor. It checks `LINT.IfChange` and `LINT.ThenChange` comments with the `ifttt` CLI. Git and jj are supported.
 
 - See findings in **Problems** and the **IFTTT Lint Findings** tree.
-- Hover over a finding for an explanation and suggested fix.
+- Hover over a directive for help, or a finding for an explanation and suggested fix.
 - Open linked files and labels with code lenses and quick actions.
 - Create directive blocks and placeholders for local edits.
 - Check committed changes across repositories with a change-set manifest.
@@ -52,7 +52,9 @@ API version: 1
 <!-- LINT.ThenChange() -->
 ```
 
-Commit both files as the baseline. Change only `apiVersion` and save. IFTTT Lint reports the missing edit in the target section. Update that section and run lint again.
+Commit both files as the baseline. Change only `apiVersion` and save. IFTTT Lint reports the missing edit as an error in Problems. Update the target section and run lint again. Editing a directive comment alone does not require a linked content edit. Directive names are case-sensitive: use `LINT.IfChange`.
+
+`LINT.Match` findings show unequal section text or extracted values, even on an empty diff. Use target navigation to review the other section. Apply Fix does not change Match content or create its missing sections.
 
 Paths that start with `//` refer to the repository root. See the [project README](https://github.com/derhnyel/ifttt#directive-syntax) for other directives and supported languages.
 
@@ -62,6 +64,7 @@ Paths that start with `//` refer to the repository root. See the [project README
 | --- | --- |
 | **IFTTT Lint: Run** | Check the selected workspace using its configured diff or revision. |
 | Click an **IFTTT Lint Findings** entry | Open the source at the reported line. |
+| Hover over a directive | Show its purpose and targets, even without findings. Uses the current editor text. |
 | Hover over a finding | Show the rule, explanation and suggested fix. |
 | **Jump to label** / **Open target file** | Open a local target or label. Ambiguous labels open the file without choosing a section. |
 | **Create label block** | Create directive stubs. This can change both source and target files. |
@@ -94,7 +97,7 @@ Configure these in VS Code Settings or workspace `settings.json`:
 
 Commands require a trusted filesystem workspace. Manual runs use the active editor's workspace folder and settings. Runs after a save use the saved document's folder. In multi-root workspaces, findings and actions keep their source workspace's settings.
 
-Save your edits before checking them. The CLI does not read unsaved edits. CLI and custom diff commands have a 30-second deadline.
+Save your edits before linting. Lint uses saved files; directive hover also reads unsaved editor text. CLI and custom diff commands have a 30-second deadline.
 
 For staged Git checks:
 
@@ -111,6 +114,8 @@ For jj, select `"iftttLint.vcs": "jj"`. Use working-tree mode or a revision such
 
 Set `iftttLint.changeSet` to a manifest path, relative to `iftttLint.workingDirectory`. Follow the [cross-repository setup guide](https://github.com/derhnyel/ifttt#cross-repository-change-sets). Every declared checkout and base/head revision must already exist locally.
 
+Each repository uses its root `.ifttt-lint.yaml` from the selected head commit, including its prefix and Python comment settings. Checkout config edits do not apply.
+
 Findings show the source repository and revision. Dirty working files cannot satisfy snapshot dependencies. Snapshot mode lets you open checkout files but disables fixes, scaffolding and label jumps. Reported lines refer to the selected head and may differ from dirty files.
 
 The extension does not check out revisions. Change-set mode cannot combine with `diffCommand` or `--fix`. Folders that use the same manifest share one report.
@@ -123,19 +128,15 @@ The extension requires a matching checksum for downloaded and cached binaries. I
 
 ## Extension playground
 
-Use `test/extension-playground` to try the extension with standard LINT directives. In `source.go`, `LINT.IfChange(LBL)` opens a block. Its closing directive, `LINT.ThenChange(target.go:LBL)`, links to the target in the same directory. In `target.go`, `LINT.IfChange(LBL)` and `LINT.ThenChange()` define the target section.
+Use `test/extension-playground` to try the extension with standard LINT directives. In `source.go`, `LINT.IfChange(LBL)` opens a block. Its closing directive links to `//test/extension-playground/target.go:LBL`. In `target.go`, `LINT.IfChange(LBL)` and `LINT.ThenChange()` define the target section.
+
+Open the repository root in VS Code:
 
 ```bash
-cd test/extension-playground
-git init
-git add .
-git commit -m "baseline"
 code .
 ```
 
-Run **IFTTT Lint: Run** from the Command Palette. Edit `source.go` to try a missing-target finding and its quick action.
-
-From the playground directory, `scripts/reset.sh` recreates the repository using the current files as its baseline. Restore edited fixture files first if you want the original baseline.
+Run **IFTTT Lint: Run** from the Command Palette. Edit `test/extension-playground/source.go` to try a missing-target finding and its quick action. Restore your fixture edits after the check.
 
 See [CLI configuration](https://github.com/derhnyel/ifttt#configuration), [cross-repository setup](https://github.com/derhnyel/ifttt#cross-repository-change-sets) and [development and host tests](https://github.com/derhnyel/ifttt#development-and-verification) for more details.
 

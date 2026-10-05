@@ -41,6 +41,16 @@ type ruleInfo struct {
 }
 
 var ruleCatalog = map[string]ruleInfo{
+	// LINT.IfChange(match_rules)
+	"match_mismatch":        {Summary: "The labelled sections contain different text or extracted values.", Severity: "error", Resolution: "Make both sections agree, or correct the Match references and optional extraction pattern. Match never proves equivalent behaviour."},
+	"match_invalid":         {Summary: "The Match directive has invalid arguments or unlabelled references.", Severity: "error", Resolution: "Use two quoted references to labelled sections and an optional nonempty regex."},
+	"match_pattern":         {Summary: "The extraction regex is invalid or has more than one capture group.", Severity: "error", Resolution: "Use Go RE2 syntax with zero or one capture group. Lookaround and backreferences are unsupported."},
+	"match_no_match":        {Summary: "The regex found no values or extracted an empty value.", Severity: "error", Resolution: "Correct the pattern or section so both sides provide nonempty values."},
+	"match_label_missing":   {Summary: "A Match reference names a label that does not exist.", Severity: "error", Resolution: "Correct the reference or add the labelled content with the target repository’s configured prefix. Placeholder fixes are unavailable for Match."},
+	"match_label_ambiguous": {Summary: "A Match reference names more than one labelled section.", Severity: "error", Resolution: "Give every section a unique label and update the reference."},
+	"match_target_error":    {Summary: "A Match section could not be read or has invalid directive structure.", Severity: "error", Resolution: "Check the target path, provider configuration and section boundaries."},
+	// LINT.ThenChange(//test/integration/match_test.go:match_contract, //README.md:match_contract)
+
 	"change_evidence_error": {
 		Summary:    "The selected change set cannot provide consistent dependency evidence.",
 		Resolution: "Declare the target repository and select an available base/head range matching any explicit target ref.",
@@ -110,6 +120,12 @@ var (
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "inspect":
+			if err := runInspect(os.Args[2:]); err != nil {
+				fmt.Fprintln(os.Stderr, "ifttt inspect:", err)
+				os.Exit(1)
+			}
+			return
 		case "jump":
 			if err := runJump(os.Args[2:]); err != nil {
 				fmt.Fprintln(os.Stderr, "ifttt:", err)
@@ -178,11 +194,13 @@ func main() {
 		combined    = flag.String("combined", "", "combined diff handling: strict|warn|ignore|parent")
 		vcsKind     = flag.String("vcs", "", "VCS backend: auto|git|jj (explicit selection enables native working diff)")
 		revision    = flag.String("diff", "", "native VCS revision range or jj revset")
-		strictPaths = flag.Bool("strict", false, "require // root-relative Google LINT target paths")
-		staged      = flag.Bool("staged", false, "lint staged Git changes")
-		varFiles    multiFlag
-		statsOut    = flag.Bool("stats", false, "print execution statistics (JSON) to stderr")
-		changeSet   = flag.String("change-set", "", "validate cross-repository changes from a revision manifest")
+		// LINT.IfChange(strict_paths_default)
+		strictPaths = flag.Bool("strict", true, "require // root paths or same-file labels in LINT targets")
+		// LINT.ThenChange(//test/integration/cli_test.go:strict_paths_default, //README.md:strict_paths_default)
+		staged    = flag.Bool("staged", false, "lint staged Git changes")
+		varFiles  multiFlag
+		statsOut  = flag.Bool("stats", false, "print execution statistics (JSON) to stderr")
+		changeSet = flag.String("change-set", "", "validate cross-repository changes from a revision manifest")
 	)
 	flag.StringVar(revision, "d", "", "native revision (alias of --diff)")
 	flag.BoolVar(warn, "warn", false, "warn mode (alias of -w)")
@@ -207,7 +225,13 @@ func main() {
 	explicitFlags := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { explicitFlags[f.Name] = true })
 
-	cfg, cfgErr := config.Load(".")
+	var cfg config.Config
+	var cfgErr error
+	if *changeSet == "" {
+		cfg, cfgErr = config.Load(".")
+	} else {
+		cfgErr = config.Validate(&cfg)
+	}
 	if cfgErr != nil && !errors.Is(cfgErr, fs.ErrNotExist) {
 		fmt.Fprintln(os.Stderr, "ifttt:", cfgErr)
 		os.Exit(2)
@@ -263,7 +287,11 @@ func main() {
 	ilog.Debug("log level configured", "level", level.String())
 	core.SetDirectivePrefix(cfg.Directives.Prefix)
 	comments.SetPythonDocstrings(cfg.PythonDocstringsEnabled())
-	factories, err := buildFactories(cfg)
+	var factories []eng.FileProviderFactory
+	var err error
+	if *changeSet == "" {
+		factories, err = buildFactories(cfg)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ifttt:", err)
 		os.Exit(2)
@@ -294,6 +322,7 @@ func main() {
 	rw := configuredWriter(cfg, cfg.Output.Format)
 	if *changeSet != "" {
 		opts := optionsFromConfig(cfg, nil)
+		opts.ConfigOverrides = map[string]bool{"code-only": explicitFlags["code-only"], "ignore": explicitFlags["ignore"] || explicitFlags["i"], "skip-dir": explicitFlags["skip-dir"], "parallelism": explicitFlags["p"] || explicitFlags["parallel"] || explicitFlags["threads"] || explicitFlags["t"]}
 		if *parallel != -1 {
 			opts.Parallelism = *parallel
 		}
@@ -1514,6 +1543,7 @@ func ensureLabelScaffoldWithFixer(root string, ref core.TargetRef, syn core.Dire
 
 func runWatch(args []string) error {
 	flags := flag.NewFlagSet("watch", flag.ContinueOnError)
+	strictPaths := flags.Bool("strict", true, "require // root-relative Google LINT target paths")
 	interval := flags.Duration("interval", 2*time.Second, "polling interval for re-running lint")
 	vcsKind := flags.String("vcs", "auto", "VCS backend: auto|git|jj")
 	revision := flags.String("revision", "", "native VCS revision range or jj revset")
@@ -1550,6 +1580,7 @@ func runWatch(args []string) error {
 		}
 	})
 	opts.Fix = false
+	opts.StrictPaths = *strictPaths
 
 	writer := configuredWriter(cfg, chooseNonEmpty(*format, cfg.Output.Format))
 
@@ -1577,6 +1608,8 @@ func runWatch(args []string) error {
 	defer cancel()
 
 	var lastHash string
+	var hasPreviousDiff bool
+	var hasMatchRules bool
 
 	ilog.Info("watch starting", "interval", interval.String(), "diff_command", command, "status_command", *statusCmd)
 	fmt.Fprintf(os.Stderr, "ifttt watch: polling \"%s\" every %s (Ctrl+C to stop)\n", command, interval)
@@ -1611,16 +1644,12 @@ func runWatch(args []string) error {
 			}
 			trimmed := strings.TrimSpace(diff)
 			hash := diffDigest(trimmed)
-			if hash == lastHash {
+			if hasPreviousDiff && hash == lastHash && !hasMatchRules && command == "" {
 				ilog.Debug("diff hash unchanged, skipping run", "hash", hash)
 				continue
 			}
 			lastHash = hash
-			if trimmed == "" {
-				fmt.Fprintln(os.Stderr, "ifttt watch: no diff")
-				ilog.Debug("watch diff empty, skipping run")
-				continue
-			}
+			hasPreviousDiff = true
 			fmt.Fprintf(os.Stderr, "\nifttt watch @ %s\n", time.Now().Format(time.RFC3339))
 
 			if backend != nil && *revision != "" {
@@ -1632,6 +1661,8 @@ func runWatch(args []string) error {
 				opts.SuppressCoChanges = hasSuppression(messages)
 			}
 			res, code := lintAndReport(diff, opts)
+			matchCount, _ := res.Stats["match_rules"].(int)
+			hasMatchRules = matchCount > 0
 			if err := writer.Write(res.Findings, res.Suppressed); err != nil {
 				fmt.Fprintf(os.Stderr, "ifttt watch: lint failed: %v\n", err)
 				ilog.Error("watch lint failed", "error", err)
@@ -1651,6 +1682,7 @@ func runWatch(args []string) error {
 
 func runReview(args []string) error {
 	flags := flag.NewFlagSet("review", flag.ContinueOnError)
+	strictPaths := flags.Bool("strict", true, "require // root-relative Google LINT target paths")
 	vcsKind := flags.String("vcs", "auto", "VCS backend: auto|git|jj")
 	base := flags.String("base", "", "explicit base revision (defaults to parent of revision)")
 	format := flags.String("format", "", "override output format (text|json|sarif)")
@@ -1687,6 +1719,7 @@ func runReview(args []string) error {
 	writer := configuredWriter(cfg, chooseNonEmpty(*format, cfg.Output.Format))
 
 	backend, err := vcs.Open(context.Background(), ".", *vcsKind)
+	opts.StrictPaths = *strictPaths
 	if err != nil {
 		return err
 	}
@@ -1697,10 +1730,6 @@ func runReview(args []string) error {
 	diff, err := backend.Diff(context.Background(), request)
 	if err != nil {
 		return err
-	}
-	if strings.TrimSpace(diff) == "" {
-		fmt.Fprintf(os.Stderr, "ifttt review: diff for %s is empty\n", rev)
-		os.Exit(0)
 	}
 
 	messages, err := backend.Messages(context.Background(), request)

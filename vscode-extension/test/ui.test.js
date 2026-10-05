@@ -45,12 +45,15 @@ function activeFinding(file='source.go',extra={}) {return {file,line:3,message:'
 
 test('ambiguous labels open the target file without offering duplicate-label writes',async()=>{
  const aggregator=new DiagnosticAggregator();const root=path.resolve('/tmp/ambiguity');const uri={fsPath:path.join(root,'source.go')};
- aggregator.publish([activeFinding('source.go',{ruleId:'label_ambiguous',targetLabel:'API'})],root);
+ for (const ruleId of ['label_ambiguous','match_label_ambiguous']) {
+ aggregator.publish([activeFinding('source.go',{ruleId,targetLabel:'API'})],root);
  const actions=new FindingCodeActionProvider(aggregator).provideCodeActions({uri},null,{diagnostics:entries.get(uri.fsPath)});
  assert.equal(actions.length,1);assert.equal(actions[0].command.command,'iftttLint.openTarget');assert.equal(actions[0].command.arguments[1]??null,null);
  const lenses=new FindingCodeLensProvider(aggregator).provideCodeLenses({uri});assert.equal(lenses[0].command.command,'iftttLint.openTarget');
  const tree=new FindingsTreeProvider(aggregator);const targets=await tree.getChildren((await tree.getChildren())[0]);assert.equal(tree.getTreeItem(targets[0]).command.command,'iftttLint.openTarget');
- tree.dispose();aggregator.dispose();
+ tree.dispose();
+ }
+ aggregator.dispose();
 });
 
 test('a clean second root preserves the first root diagnostics and target paths',async()=>{
@@ -160,3 +163,15 @@ test('distinct manifests at the same invocation root retain independent reports'
  aggregator.publish([activeFinding('/tmp/source-two.go',{headRevision:'head'})],root,second,'change-set:/tmp/two.yml');
  assert.equal(aggregator.getFindings().length,2);aggregator.removeOwner(first);assert.equal(aggregator.getFindings().length,1);assert.equal(aggregator.getFindings()[0].ownerUri,second);aggregator.dispose();
 });
+
+// LINT.IfChange(match_actions)
+test('Match findings offer navigation without placeholders or scaffolding',()=>{
+ const root=path.resolve('/tmp/match');const uri={fsPath:path.join(root,'source.go')};const aggregator=new DiagnosticAggregator();
+ for (const ruleId of ['match_mismatch','match_label_missing','match_target_error']) {
+  aggregator.publish([activeFinding('source.go',{ruleId,targetLabel:'API'})],root);
+  const actions=new FindingCodeActionProvider(aggregator).provideCodeActions({uri},null,{diagnostics:entries.get(uri.fsPath)});
+  assert.equal(actions.length,1);assert.equal(actions[0].command.command,'iftttLint.jumpToLabel');
+ }
+ aggregator.dispose();
+});
+// LINT.ThenChange(//vscode-extension/src/codeActions.ts:match_actions)

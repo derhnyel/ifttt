@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,8 @@ type Request struct {
 type Backend struct {
 	Kind, Root string
 	readOnly   bool
+	// Snapshot backends cache only IDs verified by ResolveRevision, never names.
+	verifiedIDs *sync.Map
 }
 
 func Detect(cwd string) (string, string, error) {
@@ -282,8 +285,21 @@ var _ io.Writer = (*boundedBuffer)(nil)
 // DirectiveFiles performs one fixed-string needle query for Git repositories.
 // Git tracks the ignore policy; jj's tracked-file listing is searched in one pass.
 func (b *Backend) DirectiveFiles(ctx context.Context, needle string) ([]string, error) {
+	return b.directiveFiles(ctx, needle, "-I")
+}
+
+// DirectiveFilesWithBinary includes text contracts in files containing NULs.
+// Match validates contents without depending on native text-diff classification.
+// LINT.IfChange(match_discovery)
+func (b *Backend) DirectiveFilesWithBinary(ctx context.Context, needle string) ([]string, error) {
+	return b.directiveFiles(ctx, needle, "--text")
+}
+
+// LINT.ThenChange(//test/integration/match_test.go:match_contract)
+
+func (b *Backend) directiveFiles(ctx context.Context, needle, binaryMode string) ([]string, error) {
 	if b.Kind == "git" {
-		output, err := b.run(ctx, "grep", "-I", "-l", "-z", "--fixed-strings", "-e", needle, "--", ".")
+		output, err := b.run(ctx, "grep", binaryMode, "-l", "-z", "--fixed-strings", "-e", needle, "--", ".")
 		if err != nil {
 			var exit *exec.ExitError
 			if errors.As(err, &exit) && exit.ExitCode() == 1 {

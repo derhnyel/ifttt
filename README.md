@@ -1,11 +1,12 @@
 # IFTTT Lint
 
-IFTTT Lint catches forgotten updates to related code, tests and documentation. For example, you change an API but forget its client or docs.
+When you change code, related tests or docs may need changes too. IFTTT Lint reports the linked updates you missed.
 
-Link the related sections with `LINT.IfChange` and `LINT.ThenChange` comments. IFTTT Lint checks your changes and reports any linked file or section you leave untouched. It works with Git and jj, in VS Code and in CI.
+Use `LINT.IfChange` and `LINT.ThenChange` comments to link sections. Check your changes with the CLI, VS Code or CI. Use Git or jj.
 
-It checks that required edits exist. It cannot tell whether those edits do the right thing.
+The tool checks for required edits. Tests and review must check whether the edits work.
 
+- [When to use it](#when-to-use-it)
 - [Quick start](#quick-start)
 - [VS Code extension](#vs-code-extension)
 - [CLI](#cli)
@@ -17,6 +18,23 @@ It checks that required edits exist. It cannot tell whether those edits do the r
 - [Releases](#releases)
 - [Contributing and license](#contributing-and-license)
 
+## When to use it
+
+Link sections that must change together. Keep each section small.
+
+| Scenario | What to check |
+| --- | --- |
+| Code and docs | Require a guide edit when a linked API changes. |
+| Schemas and clients | Require a client edit when a linked schema field changes. |
+| Rules and tests | Require a test edit when a linked rule changes. |
+| Defaults and examples | Require an example edit when a linked default changes. |
+| Separate implementations | Require edits to linked implementations of the same protocol rule. |
+| AI agent edits | Show agents which linked tests or docs need edits. |
+| Multiple repositories | Check linked edits in committed snapshots with `--change-set`. |
+| Repeated content | Keep labelled text or selected values equal with [LINT.Match](#match-section-contents). |
+
+Prefer shared code or generated files when they can remove duplication.
+
 ## Quick start
 
 ```go
@@ -25,7 +43,7 @@ const apiVersion = 2
 // LINT.ThenChange(//docs/api.md:API)
 ```
 
-This comment links `apiVersion` to the `API` section in `docs/api.md`:
+The comments link `apiVersion` to this section in `docs/api.md`:
 
 ```markdown
 <!-- LINT.IfChange(API) -->
@@ -33,26 +51,22 @@ API version: 2
 <!-- LINT.ThenChange() -->
 ```
 
-Once you commit both files, changing `apiVersion` without changing that section produces a finding. Paths that start with `//` refer to the repository root.
+Commit both files as the baseline. Change only `apiVersion`. The next check reports the missing edit in `docs/api.md`. Paths starting with `//` refer to the repository root.
 
-Build from a local checkout. Use Go 1.26.8, as specified in `go.mod`:
+Build from the repository root with Go 1.26.8, as specified in `go.mod`:
 
 ```sh
 make build
-./build/ifttt --vcs git                # check local edits
-./build/ifttt --vcs git --staged       # check staged co-changes
-./build/ifttt --vcs git --diff main...HEAD
-./build/ifttt --vcs jj --diff 'main..@'
-./build/ifttt --vcs auto '**/*'        # structurally validate tracked files
+./build/ifttt --vcs git
 ```
 
-Put `build/ifttt` on PATH to use it in other repositories. Git or jj must also be on PATH.
+Put `build/ifttt` on PATH to use it elsewhere. Git or jj must also be on PATH. See [CLI commands](#commands) for staged edits, revisions and jj.
 
-If a repository contains both Git and jj metadata, automatic detection chooses jj. Use `--vcs git` for Git revision ranges. Find the source and releases at [derhnyel/ifttt](https://github.com/derhnyel/ifttt).
+Automatic detection chooses jj when both Git and jj exist. Use `--vcs git` for Git revision ranges.
 
 ## VS Code extension
 
-See required updates in Problems, open linked files and check changes on save.
+See findings in Problems. Open linked files, read directive help and check changes on save.
 
 See the [extension README](vscode-extension/README.md) for installation, settings, editor actions and the playground.
 
@@ -74,14 +88,14 @@ git diff --cached | ifttt -              # unified diff on stdin
 ifttt --change-set changes.yaml --format=json
 ```
 
-Git and jj commands use the repository root, even when you run IFTTT Lint from a subdirectory. For patch files or stdin, run IFTTT Lint at the repository root. These modes use the current directory.
+Git and jj commands find the repository root from a subdirectory. Patch files and stdin use the current directory. Run those commands at the repository root.
 
 Use `--vcs auto|git|jj` to select the backend. Automatic detection chooses jj when both exist. jj has no staging area.
 
 <details>
 <summary>More commands, options and exit codes</summary>
 
-Source paths and quoted globs check directive syntax, target files and labels. With `--diff`, they also limit which changed sources IFTTT Lint checks. Checks for stale incoming references still search the whole repository. Repeat `--files` to select several sources.
+Source paths and quoted globs check directive syntax, target files and labels. With `--diff`, they limit which changed sources the tool checks. Stale-reference checks still search the whole repository. Repeat `--files` to select several sources.
 
 `--scan` includes hidden and Git-ignored files. It skips symlinks. By default, it also skips VCS metadata, dependency directories and build outputs.
 
@@ -96,11 +110,16 @@ Source paths and quoted globs check directive syntax, target files and labels. W
 | `ifttt blame source.go` | List unlabelled IfChange directives with Git blame metadata. |
 | `ifttt explain then_missing` | Show a rule's severity and how to fix it. |
 
+<!-- LINT.IfChange(inspect_command) -->
+`ifttt inspect --stdin source.go` reads editor text from stdin and reports parsed directives as JSON. It does not check targets or change files. Omit `--stdin` to read the file. It supports `--comment-style`.
+<!-- LINT.ThenChange(//cmd/ifttt/inspect.go:directive_inspection) -->
+
 `review --base BASE HEAD` selects the revisions to compare. For more options, use `ifttt --help` or a command's `--help`.
 
 - `watch --interval 2s` sets the time between checks.
 - `watch --diff 'COMMAND'` runs a shell command that produces a diff.
 - `watch --revision RANGE` selects a Git or jj revision range.
+- `watch --strict=false` and `review --strict=false` allow other local target path forms.
 - `watch --status 'COMMAND'` runs the command before each check.
 - `scaffold --preset 'BODY'` inserts the given text as a placeholder.
 
@@ -111,7 +130,7 @@ Common options:
 - `--ignore PATTERN`: ignore a file or `file#label`. Repeat this option for several patterns. `*` and `?` match within one path component. `**` matches across directories.
 - `--skip-dir DIR`: exclude a directory. Repeat this option for several directories.
 - `--code-only`: ignore changes that affect only whitespace or comments when deciding whether a source block changed.
-- `--strict=true`: require `//` root paths or same-file label selectors in standard LINT targets.
+- `--strict=true` (default): require `//` root paths or same-file label selectors in standard LINT targets. Use `--strict=false` to allow other local path forms.
 - `--warn`: report lint findings with exit status 0.
 - `--list-suppressed`: report suppressed findings and exit 0. Invalid or incomplete change-set input still exits 2.
 - `--fix`: add TODO placeholders or missing target label blocks. See [fix behavior](#fix-behavior).
@@ -132,6 +151,9 @@ Lint, scan and change-set commands use these exit codes:
 
 </details>
 
+<details>
+<summary>What automatic fixes do</summary>
+
 ### Fix behavior
 
 `ifttt --vcs git --fix` checks changes and adds placeholders for these local findings:
@@ -144,9 +166,11 @@ Lint, scan and change-set commands use these exit codes:
 
 Fixes use the target language's comments and avoid duplicate placeholders. They write working files without staging or committing them. IFTTT Lint rejects fixes to remote targets, paths outside the workspace and symlinks. Cross-repository snapshot mode does not allow writes.
 
-The CLI reports findings from before the edits. Run lint again afterward. **Replace each TODO with the actual update.** A placeholder can pass the change check while leaving the code or docs incorrect.
+The report shows findings from before the edits. Run lint again afterward. **Replace each TODO with the required update.** A placeholder can pass the check while leaving the code or docs incorrect.
 
 `ifttt --doctor --fix --scan .` removes duplicate targets and creates missing local label blocks. Doctor also reports unmatched opening and closing directives. It does not guess how to pair them. Plain `--scan` checks directive structure without applying fixes.
+
+</details>
 
 ### Directive syntax
 
@@ -158,21 +182,93 @@ const apiVersion = 2
 // LINT.ThenChange(//docs/api.md:API, //client/version.go)
 ```
 
-A target section can use `LINT.IfChange(API)` and an empty `LINT.ThenChange()`. The empty closing directive requires a label on the opening directive. `LINT.IfChange()` starts a source block without a label.
+A target section can use `LINT.IfChange(API)` and an empty `LINT.ThenChange()`. The empty closing directive requires a label on the opening directive. Bare `LINT.IfChange` or `LINT.IfChange()` starts a source block without a label.
 
 Write labels and targets without quotes. Separate multiple targets with commas. Target lists can span lines. IFTTT Lint ignores directive text in strings, prose and fenced examples.
 
-By default, `//docs/api.md`, `/docs/api.md` and `docs/api.md` refer to the repository root. Bare filenames such as `api.md` refer to the source directory. Explicit `./` and `../` paths also refer to the source directory. All local paths must stay inside the workspace.
+Standard labels must start with a letter. The remaining characters can be letters, digits, underscores, dots or dashes. Label names are case-sensitive.
 
-Use `:API` for a label in the same file. Use `//docs/api.md:API` for a label in another file. `--strict=true` requires `//` paths or same-file label references.
+<!-- LINT.IfChange(strict_paths_default) -->
 
-Extended directives use quoted arguments:
+By default, local targets must use one of these forms:
 
-- `LINT.Label("API")` and `LINT.EndLabel` define a separate target region.
-- `LINT.RequireAny(["one.go", "two.go"])` requires at least one target to change. `RequireAll` requires every target to change. `ForbidChange` rejects target edits. Inside an IfChange block, these rules apply when the block body changes. Outside a block, they apply when the source file changes.
-- `LINT.Disable("RULE")`, `LINT.Enable("RULE")` and `LINT.Ignore("RULE")` suppress rules.
+- `//docs/api.md`: a file at the repository root.
+- `:API`: a label in the same file.
+- `//docs/api.md:API`: a label in another file.
 
-For native revision ranges, `NO_IFTTT=<reason>` in a commit message suppresses required-edit checks. The empty marker `NO_IFTTT=` also suppresses them. Directive structure and stale-reference checks still run. Change-set mode does not use commit-message suppression.
+With `--strict=false`, `/docs/api.md` and `docs/api.md` also refer to the repository root. Bare filenames such as `api.md` refer to the source directory. Explicit `./` and `../` paths refer to the source directory. All local paths must stay inside the workspace.
+
+<!-- LINT.ThenChange(//cmd/ifttt/main.go:strict_paths_default, //test/integration/cli_test.go:strict_paths_default) -->
+
+These additional directives use quoted arguments. They are specific to this implementation:
+
+| Directive | Purpose |
+| --- | --- |
+| `LINT.Label("API")` | Start a named target section without creating an outgoing dependency. |
+| `LINT.EndLabel` | Close the most recent `Label` section. |
+| `LINT.Match(":A", "//other.txt:B")` | Compare the contents of two labelled sections. See [Match section contents](#match-section-contents). |
+| `LINT.RequireAny(["//one.go", "//two.go"])` | Require an edit to at least one target. |
+| `LINT.RequireAll(["//one.go", "//two.go"])` | Require edits to every target. |
+| `LINT.ForbidChange("//generated.go")` | Report an edit to the target when the source changes. |
+| `LINT.Disable("then_missing")` | Suppress this rule from this line until a matching `Enable`, or the end of the file. |
+| `LINT.Enable("then_missing")` | End the matching `Disable` scope. |
+| `LINT.Ignore("then_missing")` | Suppress this rule throughout the file, including earlier lines. |
+
+Inside an IfChange block, `RequireAny`, `RequireAll` and `ForbidChange` apply when the block body changes. Outside a block, they apply when the source file changes. These rules need a diff to check edits.
+
+<!-- LINT.IfChange(conditional_target_structure) -->
+Their target files and labels must exist, even when the source did not change or required-edit checks are suppressed. Ignored targets and skipped directories are excluded. A config change does not count as an edit to a target section.
+<!-- LINT.ThenChange(//internal/engine/rules.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure) -->
+
+Targets can select a file or a labelled section, such as `//one.go:API`. Extended `Label` names can use `#` selectors, such as `//one.go#API`.
+
+Suppression uses finding rule IDs, not directive names. Use `"all"` or `"*"` to suppress all rules. A remaining `Disable("all")` scope still suppresses a rule after `Enable("then_missing")`.
+
+Run `ifttt explain then_missing` for help with a finding. `--list-suppressed` shows suppressed findings. Prefer fixing a dependency over suppressing it.
+
+For native revision ranges, `NO_IFTTT=<reason>` in any commit message suppresses required-edit checks for the whole range. The empty marker `NO_IFTTT=` also suppresses them. Directive structure and stale-reference checks still run. Change-set mode does not use commit-message suppression.
+
+<!-- LINT.IfChange(match_contract) -->
+
+#### Match section contents
+
+Use `LINT.Match` to keep two labelled sections equal, even when neither section changed:
+
+```text
+// LINT.Match(":COPY", "//other.txt:COPY")
+```
+
+Both labels must define complete, unique `IfChange` / `ThenChange` or `Label` / `EndLabel` sections. Put Match outside the compared sections.
+
+The check compares content between the directive lines. Spaces and blank lines matter. CRLF and LF line endings match. Empty sections can match.
+
+Match findings support target navigation in VS Code. `--fix` does not change Match content or create missing sections. Equal text or values do not prove equivalent behaviour.
+
+<details>
+<summary>Compare selected values with a regex</summary>
+
+To compare values in different formats, add a regex:
+
+```text
+// LINT.Match(":VERSION", "//config.yaml:VERSION", '([0-9]+\.[0-9]+\.[0-9]+)')
+```
+
+This pattern compares all version values in order:
+
+- One capture group compares the captured value.
+- No capture group compares each full match.
+- More than one capture group produces an error.
+- Invalid patterns, no matches and empty values produce errors.
+
+Use [Go regex syntax](https://pkg.go.dev/regexp/syntax). Lookaround and backreferences are not supported. Single-quoted patterns keep backslashes as written. Escape backslashes in double-quoted arguments.
+
+</details>
+
+Match also runs on empty diffs and `NO_IFTTT` ranges. Git/jj runs find tracked Match directives. Select untracked files explicitly. File selections and scans limit the source files checked. Cross-repository manifests compare committed snapshots. Each section uses its repository’s committed prefix and Python comment settings. Use `#label` selectors with a custom directive prefix.
+
+Git uses one fixed-string query to find Match sources. It reuses the query for reverse-reference checks. The engine parses only the hits and their targets. Prefer shared content or generation when possible.
+
+<!-- LINT.ThenChange(//internal/engine/match.go:match_contract, //internal/parse/match.go:match_contract, //test/integration/match_test.go:match_contract, //cmd/ifttt/main.go:match_rules) -->
 
 <details>
 <summary>Supported files, configuration and remote references</summary>
@@ -218,9 +314,9 @@ output:
   path: ""
 ```
 
-IFTTT Lint reads configuration from ancestor directories down to the current directory. Child settings override parent settings. Ignore and skip lists merge.
+The tool reads configuration from parent directories to the current directory. Child settings override parent settings. Ignore and skip lists merge.
 
-Relative entries use the directory that contains their configuration file. IFTTT Lint normalizes these entries against the highest configuration directory. Explicit `verbose: false` and `rules.code_only: false` disable inherited values. CLI flags override configuration, including `--code-only=false` and `--verbose=false`.
+Relative entries use the directory containing their configuration file. The tool normalizes them against the highest configuration directory. Explicit `verbose: false` and `rules.code_only: false` disable inherited values. CLI flags override configuration, including `--code-only=false` and `--verbose=false`.
 
 Additional YAML keys:
 
@@ -255,7 +351,7 @@ An existing remote target does not prove that someone updated it. To check match
 
 ## GitHub Action and hooks
 
-The GitHub Action builds IFTTT Lint from source and uses Git. On pull requests, it checks changes across the full PR range. On push, it checks directive structure in all tracked files. Replace `<ref>` with a release tag or commit:
+The GitHub Action builds the tool from source and uses Git. Pull requests check linked edits across the full PR range. Pushes check directive structure in all tracked files. Replace `<ref>` with a release tag or commit:
 
 ```yaml
 on: [push, pull_request]
@@ -280,16 +376,32 @@ Optional inputs are `diff`, `change-set`, `working-directory` and `go-version`. 
 
 Separate `args` with whitespace, including in multiline YAML values. The Action does not apply shell quoting or expansion. Use the dedicated path inputs for paths with spaces. `change-set` needs all declared checkouts and revisions. It cannot combine with `diff`.
 
-For [pre-commit](https://pre-commit.com/), put `ifttt` on PATH. Add the repository's system hooks:
+For [pre-commit](https://pre-commit.com/), put `ifttt` on PATH. Add these local hooks to your project's `.pre-commit-config.yaml`:
+
+<!-- LINT.IfChange(pre_commit_hooks) -->
 
 ```yaml
 repos:
-  - repo: https://github.com/derhnyel/ifttt
-    rev: <ref>
+  - repo: local
     hooks:
       - id: ifttt
+        name: ifttt structural validation
+        description: Validate directive syntax, pairing, targets and labels in staged files.
+        entry: ifttt --vcs git
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
       - id: ifttt-diff
+        name: ifttt co-change validation
+        description: Validate all unpushed co-changes, honoring NO_IFTTT commit-message suppression.
+        entry: sh -c 'if [ -n "${PRE_COMMIT_FROM_REF:-}" ] && [ -n "${PRE_COMMIT_TO_REF:-}" ]; then exec ifttt --vcs git "$@" --diff "${PRE_COMMIT_FROM_REF}..${PRE_COMMIT_TO_REF}"; fi' --
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
 ```
+
+<!-- LINT.ThenChange(//scripts/test_benchmark.py:pre_commit_hooks) -->
 
 Install both hooks:
 
@@ -361,7 +473,11 @@ Write LINT targets without quotes. Remote URIs use `#label`. Local targets use `
 
 Ordinary remote checks test whether a file and label exist. Change sets check matching edits without credentials or network fetches.
 
-The current run's configuration applies to every snapshot. IFTTT Lint does not load each checkout's configuration separately.
+<!-- LINT.IfChange(snapshot_config) -->
+Each repository uses its root `.ifttt-lint.yaml` from the selected `head` commit. Linked sections can use different configured prefixes. A repository without this file uses `LINT` and the default rules.
+
+IFTTT Lint reads each config once. Config changes also trigger incoming-reference checks. Dirty checkout configs, configs above the checkout and nested configs do not apply in change-set mode. Commit each repository's prefix, Python comment settings and lint rules in its root config. Explicit `--code-only`, `--ignore`, `--skip-dir` and thread flags override its source settings. Output flags apply to the whole report.
+<!-- LINT.ThenChange(//internal/changeset/run.go:snapshot_config) -->
 
 Change-set mode cannot combine with these inputs or commands:
 
@@ -383,7 +499,7 @@ Exit codes are `0` for satisfied dependencies and `1` for lint violations. Inval
 
 For editor setup, see [cross-repository checks in the extension README](vscode-extension/README.md#cross-repository-checks).
 
-Check out every declared repository and both revisions first. Then run the Action. Replace `<ref>` with your published Action tag or commit:
+Prepare each declared checkout with both revisions. Then run the Action. Replace `<ref>` with your published Action tag or commit:
 
 ```yaml
 - uses: derhnyel/ifttt@<ref>
@@ -396,7 +512,7 @@ The Action does not fetch repositories in this mode. It rejects a simultaneous `
 
 ## Benchmarks and correctness
 
-Measured on **2026-10-05** with an Apple M1 Max (arm64), macOS 26.1 and Go 1.26.8. The Rust comparison uses [ifttt-lint v0.11.2](https://github.com/simonepri/ifttt-lint/releases/tag/v0.11.2).
+Measured with an Apple M1 Max (arm64), macOS 26.1 and Go 1.26.8. The Rust comparison uses [ifttt-lint v0.11.2](https://github.com/simonepri/ifttt-lint/releases/tag/v0.11.2).
 
 Times are medians of 21 runs after 3 warmups, with warm filesystem caches. Native Git timings include Git operations and process startup. They exclude builds. Both tools passed independent checks for expected exit codes and finding counts in these fixtures.
 
@@ -417,7 +533,7 @@ Real-repository scans use the same machine, **2 workers**, `--strict=false`, 21 
 
 The real-repository scans report different findings, so their times do not prove a speedup for equivalent checks. Rust is faster on TensorFlow's full scan.
 
-**Correctness:** In isolated fixtures, IFTTT Lint supports nested blocks and inline/block-comment directives that v0.11.2 rejects. It reports ambiguous target labels and empty directives that have no effect. [Cross-repository checks](#cross-repository-change-sets) use exact committed snapshots, so dirty files cannot satisfy dependencies. Regression tests cover the upstream closed-issue cases we audited.
+**Correctness:** Isolated fixtures show support for nested blocks and inline/block-comment directives that Rust v0.11.2 rejects. The tool reports ambiguous labels and empty directives that have no effect. [Cross-repository checks](#cross-repository-change-sets) use exact committed snapshots. Dirty files cannot satisfy dependencies. Regression tests cover the audited upstream closed-issue cases.
 
 The pinned TensorFlow audit produced **91 Go findings and 117 Rust findings, with 82 matching**. Path and parsing policies explain the differences. These include 26 Rust traversal errors for paths that stay inside the repository. Finding counts do not measure accuracy. Results depend on hardware and workload.
 
@@ -476,6 +592,8 @@ The `CI` gate fails if any test job fails, skips or cancels. Pull requests and m
 Keep generated reports, coverage, binaries, downloaded checkouts/tools, VSIX packages and working notes in ignored local directories. Commit source, meaningful tests, fixtures and dependency lockfiles. See [CONTRIBUTING](CONTRIBUTING.md) for review and repository policies.
 
 ## Releases
+
+Releases use version tags (`vMAJOR.MINOR.PATCH`) and include changes from [CHANGELOG](CHANGELOG.md). A merged version PR with the `release` label starts the pipeline. You can also start it manually. Tests, lint, security checks and native binary checks must pass before publication.
 
 Release builds include CLI binaries for Linux, macOS and Windows (amd64/arm64), a VS Code extension package (`.vsix`) and `SHA256SUMS`.
 

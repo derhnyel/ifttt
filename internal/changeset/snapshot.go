@@ -13,11 +13,15 @@ import (
 	"sync"
 
 	core "github.com/derhnyel/ifttt/internal"
+	"github.com/derhnyel/ifttt/internal/config"
 	"github.com/derhnyel/ifttt/internal/engine"
+	"github.com/derhnyel/ifttt/internal/parse"
 	"github.com/derhnyel/ifttt/internal/vcs"
 )
 
 type snapshot struct {
+	config     config.Config
+	settings   parse.Settings
 	entry      Repository
 	backend    *vcs.Backend
 	base, head string
@@ -28,6 +32,12 @@ type snapshotEntry struct {
 	data []byte
 	err  error
 }
+
+func (s *snapshot) configurationChanged() bool {
+	change := s.changes[".ifttt-lint.yaml"]
+	return change != nil && change.ContentChanged
+}
+
 type snapshotFiles struct {
 	ctx        context.Context
 	snapshot   *snapshot
@@ -36,6 +46,8 @@ type snapshotFiles struct {
 	bytes      int
 	readErrors []error
 }
+
+func (p *snapshotFiles) DirectiveSettings() parse.Settings { return p.snapshot.settings }
 
 func (p *snapshotFiles) localPath(name string) (string, error) {
 	if filepath.IsAbs(name) {

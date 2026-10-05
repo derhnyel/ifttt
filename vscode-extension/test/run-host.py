@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='ifttt-host-') as temporary:
         vcs('git', 'init')
         vcs('config', 'set', '--repo', 'user.name', 'Test')
         vcs('config', 'set', '--repo', 'user.email', 'test@example.invalid')
-    (secondary / 'source.go').write_text('// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange(target.go:shared_label)\n')
+    (secondary / 'source.go').write_text('// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange(//target.go:shared_label)\n')
     (secondary / 'target.go').write_text('const example = "LINT.IfChange(shared_label)"\n// See LINT.IfChange(shared_label)\n// ```go\n// LINT.IfChange(shared_label)\n// LINT.ThenChange()\n// ```\n// LINT.IfChange(shared_label)\nvar target = 1\n// LINT.ThenChange()\n')
     if backend == 'git':
         vcs('add', '.')
@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix='ifttt-host-') as temporary:
     opened = nested_repo / 'opened'
     opened.mkdir()
     (opened / 'driver.go').write_text('var driver = 1\n')
-    (nested_repo / 'source.go').write_text('// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange(target.go:shared_label)\n')
+    (nested_repo / 'source.go').write_text('// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange(//target.go:shared_label)\n')
     (nested_repo / 'target.go').write_text('// LINT.IfChange(shared_label)\nvar target = 1\n// LINT.ThenChange()\n')
     for config_root in (nested_repo, opened):
         (config_root / '.ifttt-lint.yaml').write_text('directives:\n  prefix: LINT\n')
@@ -117,6 +117,9 @@ with tempfile.TemporaryDirectory(prefix='ifttt-host-') as temporary:
     workspace.write_text(json.dumps({'folders': [{'path': str(primary)}, {'path': str(secondary)}, {'path': str(opened)}]}))
     marker = state / 'host-result.json'
     environment['IFTTT_HOST_RESULT'] = str(marker)
+    # LINT.IfChange(default_binary_host)
+    environment['PATH'] = str(state) + os.pathsep + environment['PATH']
+    # LINT.ThenChange(//vscode-extension/test/host/index.js:default_binary_host)
     command = [code, '--user-data-dir', str(state / 'user'),
                     '--extensions-dir', str(state / 'extensions'),
                     '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes',
