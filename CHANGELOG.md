@@ -4,6 +4,7 @@
 
 ## 0.1.1 — 2026-10-05
 
+- Retry failed VS Code test-host downloads with cache bypass, preserve checksum verification and report rejected response details.
 - Prepare patch, minor and major version PRs automatically, with synchronized npm versions and dated release notes.
 - Release labelled, merged PRs or manually selected versions through all CI, lint, security, VS Code host and six native binary checks.
 - Publish changelog-backed GitHub releases and the versioned Action from the original verified artifacts. Keep VS Code Marketplace publication optional.
