@@ -5,4 +5,4 @@ func greeting() string {
 	return "hello"
 }
 
-// LINT.ThenChange(target.go:LBL)
+// LINT.ThenChange(//test/extension-playground/target.go:LBL)
