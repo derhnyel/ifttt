@@ -170,7 +170,7 @@
     "@types/node": "^20.12.7",
     "@types/vscode": "^1.88.0",
     "@vscode/vsce": "^4.0.0",
-    "typescript": "^5.4.2"
+    "typescript": "^7.0.2"
   },
   "capabilities": {
     "untrustedWorkspaces": {
