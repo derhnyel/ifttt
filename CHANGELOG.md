@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Prepare patch, minor and major version PRs automatically, with synchronized npm versions and dated release notes.
+- Release labelled, merged PRs or manually selected versions through all CI, lint, security, VS Code host and six native binary checks.
+- Publish changelog-backed GitHub releases and the versioned Action from the original verified artifacts. Keep VS Code Marketplace publication optional.
+
 ## 0.1.0 — 2026-10-05
 
 - Name the CLI `ifttt` and the VS Code extension `IFTTT Lint`. Go installs use `github.com/derhnyel/ifttt/cmd/ifttt`.

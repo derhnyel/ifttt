@@ -477,6 +477,8 @@ Keep generated reports, coverage, binaries, downloaded checkouts/tools, VSIX pac
 
 ## Releases
 
+Releases use version tags (`vMAJOR.MINOR.PATCH`) and include the changes from [CHANGELOG](CHANGELOG.md). A merged version PR with the `release` label starts the release pipeline; it can also run manually. Tests, lint, security checks and native binary checks must pass before publication.
+
 Release builds include CLI binaries for Linux, macOS and Windows (amd64/arm64), a VS Code extension package (`.vsix`) and `SHA256SUMS`.
 
 Download published packages from [GitHub releases](https://github.com/derhnyel/ifttt/releases). Check downloaded files against `SHA256SUMS`. See [extension installation](vscode-extension/README.md#install) for VSIX setup.
