@@ -1,6 +1,11 @@
 package ifttt
 
 type FileChanges struct {
+	// DirectivePrefix scopes removed metadata to its owning committed repository.
+	DirectivePrefix string
+	// ExistingGuards classifies added opening directives when original source
+	// can be reconstructed. Nil means correspondence was not computed.
+	ExistingGuards map[int]bool
 	// ContentChanged preserves authoritative snapshot changes without text hunks.
 	ContentChanged bool
 	TypeChanged    bool
@@ -57,16 +62,22 @@ const (
 	Disable    = "Disable"
 	Enable     = "Enable"
 	Ignore     = "Ignore"
+	// LINT.IfChange(match_kind)
+	Match = "Match"
+	// LINT.ThenChange(//internal/parse/match.go:match_contract, //test/integration/match_test.go:match_contract)
 )
 
 type LintDirective struct {
-	Kind string
-	Line int
-	// optional fields depending on Kind
-	Label  string
-	Name   string
-	Target string
-	List   []string
+	Kind string `json:"kind"`
+	Line int    `json:"line"`
+	// Optional fields depend on the directive kind.
+	Label  string   `json:"label,omitempty"`
+	Name   string   `json:"name,omitempty"`
+	Target string   `json:"target,omitempty"`
+	List   []string `json:"list,omitempty"`
+	// Match uses two labelled references and an optional extraction pattern.
+	Pattern string `json:"pattern,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 type Finding struct {

@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,77 @@ func TestChangeSetConditionalRules(t *testing.T) {
 		})
 	}
 }
+
+// LINT.IfChange(conditional_target_structure)
+func TestChangeSetConditionalConfigurationChangesValidateTargets(t *testing.T) {
+	for _, rule := range []string{"RequireAny", "RequireAll", "ForbidChange"} {
+		for _, kind := range []string{"prefix", "python", "policy"} {
+			for _, sourceChanged := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/source-changed=%v", rule, kind, sourceChanged), func(t *testing.T) {
+					a, b := newDefaultRepo(t), newDefaultRepo(t)
+					path := "target.go"
+					targetText := "// LINT.IfChange(API)\none\n// LINT.ThenChange()\n"
+					config := "directives:\n  prefix: CUSTOM\n"
+					if kind == "python" {
+						path = "target.py"
+						targetText = "\"\"\"\nLINT.IfChange(API)\none\nLINT.ThenChange()\n\"\"\"\n"
+						config = "languages:\n  python_docstrings: false\n"
+					} else if kind == "policy" {
+						config = "rules:\n  unknown_directive: warn\n"
+					}
+					remote := "github://acme/target/" + path
+					argument := fmt.Sprintf("[%q]", remote+"#API")
+					if rule == "ForbidChange" {
+						argument = fmt.Sprintf("%q", remote+"#API")
+					}
+					before := "// LINT." + rule + "(" + argument + ")\nvar source = 1\n"
+					a.write(t, "source.go", before)
+					b.write(t, path, targetText)
+					aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+					aHead := aBase
+					if sourceChanged {
+						a.write(t, "source.go", strings.Replace(before, "source = 1", "source = 2", 1))
+						aHead = changeSetCommit(t, a)
+					}
+					// Only the committed configuration changes in the target repository.
+					b.write(t, ".ifttt-lint.yaml", config)
+					bHead := changeSetCommit(t, b)
+					wantCode := 0
+					if kind != "policy" || (sourceChanged && rule != "ForbidChange") {
+						wantCode = 1
+					}
+					output := requireCode(t, a, "", wantCode, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bHead), "--format=json")
+					var report struct {
+						Errors []struct{ Repository, RuleID, TargetPath, TargetLabel string }
+					}
+					if err := json.Unmarshal([]byte(output), &report); err != nil {
+						t.Fatal(err)
+					}
+					if kind != "policy" {
+						found := false
+						for _, f := range report.Errors {
+							if f.RuleID == "label_missing" && f.Repository == "acme/source" && f.TargetPath == remote && f.TargetLabel == "API" {
+								found = true
+							}
+						}
+						if !found {
+							t.Fatalf("missing structural target diagnostic: %s", output)
+						}
+					}
+					if !sourceChanged && strings.Contains(output, "require_") {
+						t.Fatalf("unchanged source required a target edit: %s", output)
+					}
+					if strings.Contains(output, "forbid_change") {
+						t.Fatalf("target configuration fabricated a forbidden body edit: %s", output)
+					}
+				})
+			}
+		}
+	}
+}
+
+// LINT.ThenChange(//internal/engine/rules.go:conditional_target_structure, //internal/engine/rules.go:conditional_source_trigger, //internal/engine/engine.go:conditional_target_structure)
+
 func TestChangeSetExplicitRefsAndMissingEvidence(t *testing.T) {
 	a, b, aBase, bBase := changeSetFixture(t)
 	b.write(t, "target.go", target("new"))
@@ -483,3 +555,271 @@ func TestChangeSetMixedBackendsOpaqueRegionsFailClosed(t *testing.T) {
 		})
 	}
 }
+
+// LINT.IfChange(snapshot_config)
+func TestChangeSetMixedCommittedPrefixes(t *testing.T) {
+	for _, customSource := range []bool{true, false} {
+		t.Run(fmt.Sprint(customSource), func(t *testing.T) {
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			standard := func(remote, value string) string {
+				return "// LINT.IfChange(API)\nvar value = \"" + value + "\"\n// LINT.ThenChange(" + remote + "#API)\n"
+			}
+			custom := func(remote, value string) string {
+				return "// SENTRY.IfChange(\"API\")\nvar value = \"" + value + "\"\n// SENTRY.ThenChange(\"" + remote + "#API\")\n"
+			}
+			sourceText, targetText := standard, custom
+			customRepo := b
+			if customSource {
+				sourceText, targetText, customRepo = custom, standard, a
+			}
+			customRepo.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: SENTRY\n")
+			a.write(t, "source.go", sourceText("github://acme/target/target.go", "old"))
+			b.write(t, "target.go", targetText("github://acme/source/source.go", "old"))
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			a.write(t, "source.go", sourceText("github://acme/target/target.go", "new"))
+			aHead := changeSetCommit(t, a)
+			output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bBase), "--format=json")
+			if !strings.Contains(output, `"ruleId":"then_label_missing"`) && !strings.Contains(output, `"ruleId": "then_label_missing"`) {
+				t.Fatalf("wrong missing dependency: %s", output)
+			}
+			b.write(t, "target.go", targetText("github://acme/source/source.go", "new"))
+			bHead := changeSetCommit(t, b)
+			manifest := changeSetManifest(t, a, b, aBase, aHead, bBase, bHead)
+			// Dirty configs and files must not change committed evidence.
+			a.write(t, ".ifttt-lint.yaml", "directives: [\n")
+			b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: WRONG\n")
+			requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
+			requireCode(t, b, "", 0, "--change-set", manifest, "--format=json")
+		})
+	}
+}
+
+// LINT.ThenChange(//internal/changeset/run.go:snapshot_config)
+
+func TestChangeSetMixedPrefixReverseReferences(t *testing.T) {
+	for _, customSource := range []bool{true, false} {
+		for _, remove := range []bool{true, false} {
+			t.Run(fmt.Sprintf("custom-source=%v/delete=%v", customSource, remove), func(t *testing.T) {
+				a, b := newDefaultRepo(t), newDefaultRepo(t)
+				sourceText := "// LINT.IfChange(SOURCE)\none\n// LINT.ThenChange(github://acme/target/target.go#API)\n"
+				targetText := "// SENTRY.Label(\"API\")\none\n// SENTRY.EndLabel\n"
+				customRepo := b
+				if customSource {
+					customRepo = a
+					sourceText = "// SENTRY.IfChange(\"SOURCE\")\none\n// SENTRY.ThenChange(\"github://acme/target/target.go#API\")\n"
+					targetText = "// LINT.IfChange(API)\none\n// LINT.ThenChange()\n"
+				}
+				customRepo.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: SENTRY\n")
+				a.write(t, "source.go", sourceText)
+				b.write(t, "target.go", targetText)
+				aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+				if remove {
+					b.git(t, "rm", "target.go")
+				} else {
+					b.write(t, "target.go", strings.ReplaceAll(targetText, "API", "RENAMED"))
+				}
+				bHead := changeSetCommit(t, b)
+				output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aBase, bBase, bHead), "--format=json")
+				if !strings.Contains(output, "source.go") || (!strings.Contains(output, "then_missing") && !strings.Contains(output, "label_missing")) {
+					t.Fatalf("incoming reference missed: %s", output)
+				}
+			})
+		}
+	}
+}
+
+func TestChangeSetMatchUsesTargetConfiguration(t *testing.T) {
+	for _, policy := range []string{"ignore", "warn", "error"} {
+		t.Run(policy, func(t *testing.T) {
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			a.write(t, "source.txt", matchSection("A", "one")+"// LINT.Match(\":A\", \"github://acme/target/target.txt#B\")\n")
+			b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: CUSTOM\nrules:\n  unknown_directive: "+policy+"\n")
+			b.write(t, "target.txt", "// CUSTOM.Label(\"B\")\none\n// CUSTOM.EndLabel\n// CUSTOM.Unknown()\n")
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			manifest := changeSetManifest(t, a, b, aBase, aBase, bBase, bBase)
+			code := 0
+			if policy == "error" {
+				code = 1
+			}
+			output := requireCode(t, a, "", code, "--change-set", manifest, "--format=json")
+			if policy == "error" {
+				assertMatchRule(t, output, "match_target_error")
+			} else if strings.Contains(output, "match_mismatch") || strings.Contains(output, "match_label_missing") {
+				t.Fatalf("target prefix ignored: %s", output)
+			}
+			if policy == "warn" && (!strings.Contains(output, "warning") || !strings.Contains(output, "acme/target")) {
+				t.Fatalf("target warning ownership: %s", output)
+			}
+			b.write(t, "target.txt", "// CUSTOM.Label(\"B\")\ntwo\n// CUSTOM.EndLabel\n")
+			bHead := changeSetCommit(t, b)
+			output = requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aBase, bBase, bHead), "--format=json")
+			assertMatchRule(t, output, "match_mismatch")
+		})
+	}
+}
+
+func TestChangeSetCommittedPolicyAndExplicitOverride(t *testing.T) {
+	a, b := newDefaultRepo(t), newDefaultRepo(t)
+	a.write(t, ".ifttt-lint.yaml", "rules:\n  code_only: true\nparallelism: '1'\n")
+	a.write(t, "source.go", "// LINT.IfChange(API)\n// old comment\n// LINT.ThenChange(github://acme/target/target.go#API)\n")
+	b.write(t, "target.go", "// LINT.IfChange(API)\nunchanged\n// LINT.ThenChange()\n")
+	aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+	a.write(t, "source.go", "// LINT.IfChange(API)\n// new comment\n// LINT.ThenChange(github://acme/target/target.go#API)\n")
+	aHead := changeSetCommit(t, a)
+	manifest := changeSetManifest(t, a, b, aBase, aHead, bBase, bBase)
+	a.write(t, ".ifttt-lint.yaml", "rules:\n  code_only: false\n")
+	requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
+	for _, threads := range []string{"--p", "--parallel", "--threads", "--t"} {
+		requireCode(t, a, "", 1, "--change-set", manifest, "--format=json", "--code-only=false", threads, "2")
+	}
+	for _, ignore := range []string{"--ignore", "-i"} {
+		requireCode(t, a, "", 0, "--change-set", manifest, "--format=json", "--code-only=false", ignore, "source.go")
+	}
+	// A target config edit must never count as an edit to the linked body.
+	b.write(t, ".ifttt-lint.yaml", "rules:\n  unknown_directive: warn\n")
+	bHead := changeSetCommit(t, b)
+	output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bHead), "--format=json", "--code-only=false")
+	assertMatchRule(t, output, "then_label_missing")
+	a.write(t, ".ifttt-lint.yaml", "ignores: [./source.go]\n")
+	aIgnored := changeSetCommit(t, a)
+	requireCode(t, a, "", 0, "--change-set", changeSetManifest(t, a, b, aBase, aIgnored, bBase, bHead), "--format=json")
+}
+
+func TestChangeSetRejectsCommittedInvalidConfiguration(t *testing.T) {
+	for _, body := range []string{"directives: [\n", "parallelism: invalid\n", "rules:\n  unknown_directive: typo\n"} {
+		t.Run(body, func(t *testing.T) {
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			a.write(t, ".ifttt-lint.yaml", body)
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			a.write(t, ".ifttt-lint.yaml", "")
+			_, stderr, code := a.run(t, "", "--change-set", changeSetManifest(t, a, b, aBase, aBase, bBase, bBase), "--format=json")
+			if code != 2 || !strings.Contains(stderr, "acme/source") || !strings.Contains(stderr, ".ifttt-lint.yaml") {
+				t.Fatalf("invalid committed config: exit %d, %s", code, stderr)
+			}
+		})
+	}
+}
+
+func TestChangeSetPythonSettingsBelongToTarget(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			a, b := newRepo(t), newDefaultRepo(t)
+			a.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: SENTRY\nlanguages:\n  python_docstrings: false\n")
+			b.write(t, ".ifttt-lint.yaml", fmt.Sprintf("languages:\n  python_docstrings: %v\n", enabled))
+			a.write(t, "source.go", "// SENTRY.IfChange(\"SOURCE\")\none\n// SENTRY.ThenChange(\"github://acme/target/target.py#API\")\n")
+			b.write(t, "target.py", "\"\"\"\nLINT.IfChange(API)\none\nLINT.ThenChange()\n\"\"\"\n")
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			a.write(t, "source.go", "// SENTRY.IfChange(\"SOURCE\")\ntwo\n// SENTRY.ThenChange(\"github://acme/target/target.py#API\")\n")
+			aHead := changeSetCommit(t, a)
+			output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bBase), "--format=json")
+			rule := "label_missing"
+			if enabled {
+				rule = "then_label_missing"
+			}
+			assertMatchRule(t, output, rule)
+		})
+	}
+}
+
+func TestChangeSetMixedPrefixesWithJJ(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj unavailable")
+	}
+	a, b := newDefaultRepo(t), newRepo(t)
+	a.write(t, "source.go", "// LINT.IfChange(API)\none\n// LINT.ThenChange(github://acme/target/target.go#API)\n")
+	b.write(t, "target.go", "// SENTRY.Label(\"API\")\none\n// SENTRY.EndLabel\n")
+	aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+	a.write(t, "source.go", "// LINT.IfChange(API)\ntwo\n// LINT.ThenChange(github://acme/target/target.go#API)\n")
+	aHead := changeSetCommit(t, a)
+	b.jj(t, "git", "init", "--colocate")
+	manifest := changeSetManifest(t, a, b, aBase, aHead, bBase, bBase)
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["repositories"].([]any)[1].(map[string]any)["vcs"] = "jj"
+	data, err = yaml.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	op := b.jj(t, "--ignore-working-copy", "op", "log", "--limit", "1", "--no-graph", "--template", `id`)
+	b.write(t, ".ifttt-lint.yaml", "directives: [\n")
+	output := requireCode(t, a, "", 1, "--change-set", manifest, "--format=json")
+	assertMatchRule(t, output, "then_label_missing")
+	if op != b.jj(t, "--ignore-working-copy", "op", "log", "--limit", "1", "--no-graph", "--template", `id`) {
+		t.Fatal("snapshot config read changed jj operations")
+	}
+}
+
+func TestChangeSetConfigurationBoundaries(t *testing.T) {
+	for _, symlink := range []bool{true, false} {
+		t.Run(fmt.Sprint(symlink), func(t *testing.T) {
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			if symlink {
+				a.write(t, "real-config.yaml", "directives:\n  prefix: WRONG\n")
+				if err := os.Symlink("real-config.yaml", filepath.Join(a.dir, ".ifttt-lint.yaml")); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+			} else {
+				if err := os.WriteFile(filepath.Join(filepath.Dir(a.dir), ".ifttt-lint.yaml"), []byte("directives: [\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(filepath.Join(a.dir, "nested"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				a.write(t, "nested/.ifttt-lint.yaml", "directives: [\n")
+				a.write(t, "nested/source.go", "// LINT.IfChange(API)\none\n// LINT.ThenChange(github://acme/target/target.go#API)\n")
+				b.write(t, "target.go", "// LINT.IfChange(API)\none\n// LINT.ThenChange()\n")
+			}
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			if symlink {
+				_, stderr, code := a.run(t, "", "--change-set", changeSetManifest(t, a, b, aBase, aBase, bBase, bBase))
+				if code != 2 || !strings.Contains(stderr, "regular blob") {
+					t.Fatalf("symlink config accepted: exit %d, %s", code, stderr)
+				}
+			} else {
+				a.write(t, "nested/source.go", "// LINT.IfChange(API)\ntwo\n// LINT.ThenChange(github://acme/target/target.go#API)\n")
+				aHead := changeSetCommit(t, a)
+				output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bBase), "--format=json")
+				assertMatchRule(t, output, "then_label_missing")
+			}
+		})
+	}
+}
+
+// LINT.IfChange(snapshot_config_changes)
+func TestChangeSetConfigurationChangesRecheckIncomingReferences(t *testing.T) {
+	for _, kind := range []string{"prefix", "python"} {
+		t.Run(kind, func(t *testing.T) {
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			path := "target.go"
+			if kind == "prefix" {
+				b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: CUSTOM\n")
+				b.write(t, path, "// CUSTOM.Label(\"API\")\none\n// CUSTOM.EndLabel\n")
+			} else {
+				path = "target.py"
+				b.write(t, path, "\"\"\"\nLINT.IfChange(API)\none\nLINT.ThenChange()\n\"\"\"\n")
+			}
+			a.write(t, "source.go", "// LINT.IfChange(SOURCE)\none\n// LINT.ThenChange(github://acme/target/"+path+"#API)\n")
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			if kind == "prefix" {
+				b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: LINT\n")
+				b.write(t, path, "// LINT.IfChange(RENAMED)\none\n// LINT.ThenChange()\n")
+			} else {
+				b.write(t, ".ifttt-lint.yaml", "languages:\n  python_docstrings: false\n")
+			}
+			bHead := changeSetCommit(t, b)
+			output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aBase, bBase, bHead), "--format=json")
+			assertMatchRule(t, output, "label_missing")
+		})
+	}
+}
+
+// LINT.ThenChange(//internal/changeset/run.go:snapshot_config_changes)

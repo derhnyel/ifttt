@@ -21,7 +21,7 @@ func TestNativeSpacedTargetsAndBackslashContinuations(t *testing.T) {
 				r.jj(t, "git", "init", "--colocate")
 			}
 			r.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: LINT\n")
-			text := "// LINT.IfChange(API)\nold\n// LINT.ThenChange( \\\n// target file.go:API, \\\n// other.go:API)\n"
+			text := "// LINT.IfChange(API)\nold\n// LINT.ThenChange( \\\n// //target file.go:API, \\\n// //other.go:API)\n"
 			target := "// LINT.IfChange(API)\nold\n// LINT.ThenChange()\n"
 			r.write(t, "source.go", text)
 			r.write(t, "target file.go", target)
@@ -64,7 +64,7 @@ func TestNativeUnconfiguredURLsRejectLocalAliases(t *testing.T) {
 				r.write(t, alias+"/target.go", "int local_alias;\n")
 			}
 			r.write(t, "source.go", "// LINT.IfChange(API)\nbody\n// LINT.ThenChange("+raw+")\n")
-			out := requireCode(t, r, "", 1, "--vcs=git", "--strict=false", "--format=json", "--", "source.go")
+			out := requireCode(t, r, "", 1, "--vcs=git", "--format=json", "--", "source.go")
 			if !strings.Contains(out, "configured provider") || !strings.Contains(out, `"ruleId": "invalid_target_path"`) {
 				t.Fatalf("URL was treated as a local file: %s", out)
 			}
