@@ -1149,7 +1149,7 @@ func TestNativeRootPathsAcrossCommentFamilies(t *testing.T) {
 				if err := os.Mkdir(filepath.Join(r.dir, "lowercase"), 0700); err != nil {
 					t.Fatal(err)
 				}
-				name = filepath.Join("lowercase", "makefile")
+				name = "lowercase/makefile"
 			}
 			body := group.open + " LINT.IfChange(contract) " + group.close + "\nvalue = 1\n" + group.open + " LINT.ThenChange(//target.go:shared) " + group.close + "\n"
 			bodies[name] = body
@@ -1198,7 +1198,7 @@ func TestNativeGoTypeScriptMarkdownChainFromNestedDirectory(t *testing.T) {
 		if err := json.Unmarshal([]byte(output), &report); err != nil {
 			t.Fatal(err)
 		}
-		if len(report.Errors) != 1 || report.Errors[0].File != filepath.FromSlash(want) {
+		if len(report.Errors) != 1 || report.Errors[0].File != want {
 			t.Fatalf("expected exactly one finding in %s: %s", want, output)
 		}
 	}
