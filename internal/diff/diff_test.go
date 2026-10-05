@@ -84,3 +84,46 @@ func TestTrailingNewlineOnlyPatch(t *testing.T) {
 		t.Fatalf("%+v %v", f, err)
 	}
 }
+
+// LINT.IfChange(combined_headers)
+func TestCombinedHeaderTextInsideHunksRemainsUnified(t *testing.T) {
+	for _, marker := range []string{"diff --cc ", "diff --combined "} {
+		t.Run(marker, func(t *testing.T) {
+			patch := "diff --git a/example.txt b/example.txt\n--- a/example.txt\n+++ b/example.txt\n@@ -1,2 +1,2 @@\n " + marker + "context\n-old " + marker + "text\n+new " + marker + "text\n"
+			p := New(strings.NewReader(patch))
+			f, err := p.NextFile()
+			if err != nil || f == nil || len(f.Chunks) != 1 {
+				t.Fatalf("literal header text suppressed a unified patch: %+v %v", f, err)
+			}
+			if _, err = p.NextFile(); err != io.EOF {
+				t.Fatalf("end = %v, want EOF", err)
+			}
+		})
+	}
+}
+
+func TestCombinedHeaderDetectionAcrossReadBoundaries(t *testing.T) {
+	for _, prefix := range []string{"", "ordinary line\n", "ordinary line without newline "} {
+		for _, marker := range []string{"diff --cc ", "diff --combined "} {
+			for _, size := range []int{1, 2, 7, 19} {
+				d := &combinedDetector{r: strings.NewReader(prefix + marker + "file\n")}
+				buf := make([]byte, size)
+				for {
+					_, err := d.Read(buf)
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				want := prefix == "" || strings.HasSuffix(prefix, "\n")
+				if d.found != want {
+					t.Fatalf("prefix=%q marker=%q chunk=%d found=%v want=%v", prefix, marker, size, d.found, want)
+				}
+			}
+		}
+	}
+}
+
+// LINT.ThenChange()
