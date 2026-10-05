@@ -1,0 +1,16 @@
+- id: iflint
+  name: iflint structural validation
+  description: Validate directive syntax, pairing, targets and labels in staged files.
+  entry: iflint --vcs git
+  language: system
+  pass_filenames: true
+  stages: [pre-commit]
+
+- id: iflint-diff
+  name: iflint co-change validation
+  description: Validate all unpushed co-changes, honoring NO_IFTTT commit-message suppression.
+  entry: sh -c 'if [ -n "${PRE_COMMIT_FROM_REF:-}" ] && [ -n "${PRE_COMMIT_TO_REF:-}" ]; then exec iflint --vcs git "$@" --diff "${PRE_COMMIT_FROM_REF}..${PRE_COMMIT_TO_REF}"; fi' --
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
