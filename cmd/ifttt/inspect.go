@@ -64,4 +64,4 @@ func runInspect(args []string) error {
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
 
-// LINT.ThenChange(//test/integration/inspect_test.go:directive_inspection, //README.md:inspect_command)
+// LINT.ThenChange(//test/integration/inspect_test.go:directive_inspection, //docs/cli.md:inspect_command)

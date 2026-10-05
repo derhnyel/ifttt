@@ -60,7 +60,7 @@ func evaluateConditionalRule(rule conditionalRule, changes map[string]*core.File
 		if !triggered {
 			continue
 		}
-		// LINT.ThenChange(//internal/engine/engine.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure, //internal/engine/conditional_structure_test.go:conditional_target_structure, //README.md:conditional_target_structure)
+		// LINT.ThenChange(//internal/engine/engine.go:conditional_target_structure, //test/integration/change_set_test.go:conditional_target_structure, //internal/engine/conditional_structure_test.go:conditional_target_structure, //docs/directives.md:conditional_target_structure)
 		total++
 		changed, lookupErr := lookup(target.Path)
 		if lookupErr != nil {

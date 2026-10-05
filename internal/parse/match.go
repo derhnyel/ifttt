@@ -77,4 +77,4 @@ func parseMatch(body string, line int) core.LintDirective {
 	return d
 }
 
-// LINT.ThenChange(//internal/engine/match.go:match_contract, //test/integration/match_test.go:match_contract, //README.md:match_contract)
+// LINT.ThenChange(//internal/engine/match.go:match_contract, //test/integration/match_test.go:match_contract, //docs/directives.md:match_contract)

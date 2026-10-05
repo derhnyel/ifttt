@@ -272,7 +272,7 @@ func repositoryOptions(repository *snapshot, options engine.Options) engine.Opti
 	if !explicit["skip-dir"] {
 		options.SkipDirs = append([]string{}, cfg.SkipDirs...)
 	}
-	// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_ignore_policy, //README.md:snapshot_ignore_policy)
+	// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_ignore_policy, //docs/cross-repository.md:snapshot_ignore_policy)
 	if !explicit["parallelism"] {
 		options.Parallelism = 0
 		if n, err := strconv.Atoi(cfg.Parallelism); err == nil {
@@ -283,7 +283,7 @@ func repositoryOptions(repository *snapshot, options engine.Options) engine.Opti
 	return options
 }
 
-// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_config, //README.md:snapshot_config)
+// LINT.ThenChange(//test/integration/change_set_test.go:snapshot_config, //docs/cross-repository.md:snapshot_config)
 
 func deduplicate(findings []core.Finding) []core.Finding {
 	// Complete comparable findings retain severity, suppression and target identity.

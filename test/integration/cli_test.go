@@ -683,7 +683,7 @@ func TestScanAndDoctorSkipLocalArtifactsButCheckUntrackedSources(t *testing.T) {
 	}
 }
 
-// LINT.ThenChange(//internal/scan/scan.go:scan_local_artifacts, //README.md:scan_local_artifacts)
+// LINT.ThenChange(//internal/scan/scan.go:scan_local_artifacts, //docs/cli.md:scan_local_artifacts)
 
 func TestScanAndDoctorRespectGitAndConfiguredExclusions(t *testing.T) {
 	for _, mode := range [][]string{{"--scan", "."}, {"--doctor"}} {
@@ -1185,7 +1185,7 @@ func TestReviewAndWatchStrictPathsDefaultAndOptOut(t *testing.T) {
 	}
 }
 
-// LINT.ThenChange(//cmd/ifttt/main.go:strict_paths_default, //README.md:strict_paths_default)
+// LINT.ThenChange(//cmd/ifttt/main.go:strict_paths_default, //docs/directives.md:strict_paths_default)
 
 func TestUpstreamShortFlags(t *testing.T) {
 	r := fixture(t)

@@ -56,7 +56,7 @@ Commit both files as the baseline. Change only `apiVersion` and save. IFTTT Lint
 
 `LINT.Match` findings show unequal section text or extracted values, even on an empty diff. Use target navigation to review the other section. Apply Fix does not change Match content or create its missing sections.
 
-Paths that start with `//` refer to the repository root. See the [project README](https://github.com/derhnyel/ifttt#directive-syntax) for other directives and supported languages.
+Paths that start with `//` refer to the repository root. See [directive syntax](https://github.com/derhnyel/ifttt/blob/main/docs/directives.md#directive-syntax) and [supported files](https://github.com/derhnyel/ifttt/blob/main/docs/cli.md#supported-files).
 
 ## Editor actions
 
@@ -112,7 +112,7 @@ For jj, select `"iftttLint.vcs": "jj"`. Use working-tree mode or a revision such
 
 ### Cross-repository checks
 
-Set `iftttLint.changeSet` to a manifest path, relative to `iftttLint.workingDirectory`. Follow the [cross-repository setup guide](https://github.com/derhnyel/ifttt#cross-repository-change-sets). Every declared checkout and base/head revision must already exist locally.
+Set `iftttLint.changeSet` to a manifest path, relative to `iftttLint.workingDirectory`. Follow the [cross-repository setup guide](https://github.com/derhnyel/ifttt/blob/main/docs/cross-repository.md). Every declared checkout and base/head revision must already exist locally.
 
 Each repository uses its root `.ifttt-lint.yaml` from the selected head commit, including its prefix and Python comment settings. Checkout config edits do not apply.
 
@@ -138,7 +138,7 @@ code .
 
 Run **IFTTT Lint: Run** from the Command Palette. Edit `test/extension-playground/source.go` to try a missing-target finding and its quick action. Restore your fixture edits after the check.
 
-See [CLI configuration](https://github.com/derhnyel/ifttt#configuration), [cross-repository setup](https://github.com/derhnyel/ifttt#cross-repository-change-sets) and [development and host tests](https://github.com/derhnyel/ifttt#development-and-verification) for more details.
+See [CLI configuration](https://github.com/derhnyel/ifttt/blob/main/docs/cli.md#configuration), [cross-repository setup](https://github.com/derhnyel/ifttt/blob/main/docs/cross-repository.md) and [development and host tests](https://github.com/derhnyel/ifttt#development-and-verification) for more details.
 
 ## Troubleshooting
 

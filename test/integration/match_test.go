@@ -267,4 +267,4 @@ func TestMatchTargetUnknownPolicyAndSuppression(t *testing.T) {
 	}
 }
 
-// LINT.ThenChange(//internal/engine/match.go:match_contract, //internal/parse/match.go:match_contract, //README.md:match_contract)
+// LINT.ThenChange(//internal/engine/match.go:match_contract, //internal/parse/match.go:match_contract, //docs/directives.md:match_contract)

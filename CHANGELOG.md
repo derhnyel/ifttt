@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Parse remote comments using the target file path when a GitHub reference selects a branch, tag or commit.
+
+- Split detailed usage into linked guides. Document branch, tag and commit references and test the published examples with Git and jj. Cover three-repository chains, mixed local/remote conditions and committed suppression.
+
 - Add tested usage examples for directives, nested links, configuration and committed cross-repository checks. Apply configured scan and doctor exclusions correctly when running from a subdirectory.
 
 - Respect Git ignore rules and configured exclusions during scan, doctor and fallback directive discovery. Limit default skips to VCS metadata and dependency/cache folders; editor directories and build outputs follow project ignore rules. Show discovery progress with `--verbose`.

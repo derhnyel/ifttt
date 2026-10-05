@@ -234,30 +234,64 @@ func TestChangeSetConditionalConfigurationChangesValidateTargets(t *testing.T) {
 
 // LINT.ThenChange(//internal/engine/rules.go:conditional_target_structure, //internal/engine/rules.go:conditional_source_trigger, //internal/engine/engine.go:conditional_target_structure)
 
+// LINT.IfChange(remote_revision_refs)
 func TestChangeSetExplicitRefsAndMissingEvidence(t *testing.T) {
-	a, b, aBase, bBase := changeSetFixture(t)
-	b.write(t, "target.go", target("new"))
-	bHead := changeSetCommit(t, b)
-	for _, tc := range []struct {
-		uri  string
-		code int
-	}{
-		{"github://acme/target/target.go?ref=" + bHead, 0},
-		{"github://acme/target/target.go?ref=" + bBase, 2},
-		{"github://acme/absent/target.go", 2},
-		{"github://acme/target/target.go?typo=HEAD", 2},
-		{"github://acme/target/../outside.go", 2},
-	} {
-		t.Run(tc.uri, func(t *testing.T) {
-			a.write(t, "source.go", source(tc.uri, "new"))
-			aHead := changeSetCommit(t, a)
-			requireCode(t, a, "", tc.code, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bHead), "--format=json")
+	for _, backend := range []string{"git", "jj"} {
+		t.Run(backend, func(t *testing.T) {
+			a, b, aBase, bBase := changeSetFixture(t)
+			if backend == "jj" {
+				if _, err := exec.LookPath("jj"); err != nil {
+					t.Skip("jj unavailable")
+				}
+				b.jj(t, "git", "init", "--colocate")
+			}
+			b.write(t, "target.go", target("new"))
+			bHead := commitExample(t, b, backend)
+			b.git(t, "branch", "feature/contracts", bHead)
+			b.git(t, "tag", "v2.0.0", bHead)
+			b.git(t, "branch", "old-contract", bBase)
+			b.git(t, "tag", "v1.0.0", bBase)
+			if backend == "jj" {
+				// Snapshot checks do not import Git refs or alter jj operations.
+				b.jj(t, "git", "import")
+			}
+			manifest := func(aHead string) string {
+				return combinationManifest(t, []map[string]string{
+					{"repo": "acme/source", "path": a.dir, "vcs": "git", "base": aBase, "head": aHead},
+					{"repo": "acme/target", "path": b.dir, "vcs": backend, "base": bBase, "head": bHead},
+				})
+			}
+			for _, tc := range []struct {
+				uri  string
+				code int
+			}{
+				{"github://acme/target/target.go", 0},
+				{"github://acme/target/target.go?ref=feature/contracts", 0},
+				{"github://acme/target/target.go?ref=v2.0.0", 0},
+				{"github://acme/target/target.go?ref=" + bHead, 0},
+				{"github://acme/target/target.go?ref=old-contract", 2},
+				{"github://acme/target/target.go?ref=v1.0.0", 2},
+				{"github://acme/target/target.go?ref=" + bBase, 2},
+				{"github://acme/target/target.go?ref=missing-branch", 2},
+				{"github://acme/absent/target.go", 2},
+				{"github://acme/target/target.go?typo=HEAD", 2},
+				{"github://acme/target/../outside.go", 2},
+			} {
+				t.Run(tc.uri, func(t *testing.T) {
+					a.write(t, "source.go", source(tc.uri, "new"))
+					aHead := changeSetCommit(t, a)
+					requireCode(t, a, "", tc.code, "--change-set", manifest(aHead), "--format=json")
+				})
+			}
+			invalid := manifest("does-not-exist")
+			requireCode(t, a, "", 2, "--change-set", invalid)
+			requireCode(t, a, "", 2, "--change-set", invalid, "--warn")
 		})
 	}
-	invalid := changeSetManifest(t, a, b, aBase, "does-not-exist", bBase, bHead)
-	requireCode(t, a, "", 2, "--change-set", invalid)
-	requireCode(t, a, "", 2, "--change-set", invalid, "--warn")
 }
+
+// LINT.ThenChange(//README.md:remote_revision_refs)
+
 func TestChangeSetForeignDiagnosticOwnership(t *testing.T) {
 	a, b, aBase, bBase := changeSetFixture(t)
 	a.write(t, "source.go", source("github://acme/target/target.go", "new"))
@@ -568,40 +602,44 @@ func TestChangeSetMixedBackendsOpaqueRegionsFailClosed(t *testing.T) {
 
 // LINT.IfChange(snapshot_config)
 func TestChangeSetMixedCommittedPrefixes(t *testing.T) {
-	for _, customSource := range []bool{true, false} {
-		t.Run(fmt.Sprint(customSource), func(t *testing.T) {
-			a, b := newDefaultRepo(t), newDefaultRepo(t)
-			standard := func(remote, value string) string {
-				return "// LINT.IfChange(API)\nvar value = \"" + value + "\"\n// LINT.ThenChange(" + remote + "#API)\n"
+	for _, backend := range []string{"git", "jj"} {
+		t.Run(backend, func(t *testing.T) {
+			for _, customSource := range []bool{true, false} {
+				t.Run(fmt.Sprint(customSource), func(t *testing.T) {
+					a, b := newExampleRepo(t, backend), newExampleRepo(t, backend)
+					standard := func(remote, value string) string {
+						return "// LINT.IfChange(API)\nvar value = \"" + value + "\"\n// LINT.ThenChange(" + remote + "#API)\n"
+					}
+					custom := func(remote, value string) string {
+						return "// SENTRY.IfChange(\"API\")\nvar value = \"" + value + "\"\n// SENTRY.ThenChange(\"" + remote + "#API\")\n"
+					}
+					sourceText, targetText := standard, custom
+					customRepo := b
+					if customSource {
+						sourceText, targetText, customRepo = custom, standard, a
+					}
+					customRepo.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: SENTRY\n")
+					a.write(t, "source.go", sourceText("github://acme/target/target.go", "old"))
+					b.write(t, "target.go", targetText("github://acme/source/source.go", "old"))
+					aBase, bBase := commitExample(t, a, backend), commitExample(t, b, backend)
+					a.write(t, "source.go", sourceText("github://acme/target/target.go", "new"))
+					aHead := commitExample(t, a, backend)
+					output := requireCode(t, a, "", 1, "--change-set", exampleChangeSetManifest(t, backend, a, b, aBase, aHead, bBase, bBase), "--format=json")
+					if !strings.Contains(output, `"ruleId":"then_label_missing"`) && !strings.Contains(output, `"ruleId": "then_label_missing"`) {
+						t.Fatalf("wrong missing dependency: %s", output)
+					}
+					b.write(t, "target.go", targetText("github://acme/source/source.go", "new"))
+					bHead := commitExample(t, b, backend)
+					manifest := exampleChangeSetManifest(t, backend, a, b, aBase, aHead, bBase, bHead)
+					// Dirty configs and files must not change committed evidence.
+					a.write(t, ".ifttt-lint.yaml", "directives: [\n")
+					b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: WRONG\n")
+					a.write(t, ".gitignore", "source.go\n")
+					b.write(t, ".gitignore", "target.go\n")
+					requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
+					requireCode(t, b, "", 0, "--change-set", manifest, "--format=json")
+				})
 			}
-			custom := func(remote, value string) string {
-				return "// SENTRY.IfChange(\"API\")\nvar value = \"" + value + "\"\n// SENTRY.ThenChange(\"" + remote + "#API\")\n"
-			}
-			sourceText, targetText := standard, custom
-			customRepo := b
-			if customSource {
-				sourceText, targetText, customRepo = custom, standard, a
-			}
-			customRepo.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: SENTRY\n")
-			a.write(t, "source.go", sourceText("github://acme/target/target.go", "old"))
-			b.write(t, "target.go", targetText("github://acme/source/source.go", "old"))
-			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
-			a.write(t, "source.go", sourceText("github://acme/target/target.go", "new"))
-			aHead := changeSetCommit(t, a)
-			output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bBase), "--format=json")
-			if !strings.Contains(output, `"ruleId":"then_label_missing"`) && !strings.Contains(output, `"ruleId": "then_label_missing"`) {
-				t.Fatalf("wrong missing dependency: %s", output)
-			}
-			b.write(t, "target.go", targetText("github://acme/source/source.go", "new"))
-			bHead := changeSetCommit(t, b)
-			manifest := changeSetManifest(t, a, b, aBase, aHead, bBase, bHead)
-			// Dirty configs and files must not change committed evidence.
-			a.write(t, ".ifttt-lint.yaml", "directives: [\n")
-			b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: WRONG\n")
-			a.write(t, ".gitignore", "source.go\n")
-			b.write(t, ".gitignore", "target.go\n")
-			requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
-			requireCode(t, b, "", 0, "--change-set", manifest, "--format=json")
 		})
 	}
 }
@@ -737,7 +775,7 @@ func TestChangeSetIgnorePolicyUsesEachCommittedRepository(t *testing.T) {
 	}
 }
 
-// LINT.ThenChange(//internal/changeset/run.go:snapshot_ignore_policy, //README.md:snapshot_ignore_policy)
+// LINT.ThenChange(//internal/changeset/run.go:snapshot_ignore_policy, //docs/cross-repository.md:snapshot_ignore_policy)
 
 func TestChangeSetRejectsCommittedInvalidConfiguration(t *testing.T) {
 	for _, body := range []string{"directives: [\n", "parallelism: invalid\n", "rules:\n  unknown_directive: typo\n"} {

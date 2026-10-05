@@ -49,7 +49,7 @@ var ruleCatalog = map[string]ruleInfo{
 	"match_label_missing":   {Summary: "A Match reference names a label that does not exist.", Severity: "error", Resolution: "Correct the reference or add the labelled content with the target repository’s configured prefix. Placeholder fixes are unavailable for Match."},
 	"match_label_ambiguous": {Summary: "A Match reference names more than one labelled section.", Severity: "error", Resolution: "Give every section a unique label and update the reference."},
 	"match_target_error":    {Summary: "A Match section could not be read or has invalid directive structure.", Severity: "error", Resolution: "Check the target path, provider configuration and section boundaries. Git ignore rules do not suppress explicitly linked Match targets."},
-	// LINT.ThenChange(//test/integration/match_test.go:match_contract, //README.md:match_contract)
+	// LINT.ThenChange(//test/integration/match_test.go:match_contract, //docs/directives.md:match_contract)
 
 	"change_evidence_error": {
 		Summary:    "The selected change set cannot provide consistent dependency evidence.",
@@ -196,7 +196,7 @@ func main() {
 		revision    = flag.String("diff", "", "native VCS revision range or jj revset")
 		// LINT.IfChange(strict_paths_default)
 		strictPaths = flag.Bool("strict", true, "require // root paths or same-file labels in LINT targets")
-		// LINT.ThenChange(//test/integration/cli_test.go:strict_paths_default, //README.md:strict_paths_default)
+		// LINT.ThenChange(//test/integration/cli_test.go:strict_paths_default, //docs/directives.md:strict_paths_default)
 		staged    = flag.Bool("staged", false, "lint staged Git changes")
 		varFiles  multiFlag
 		statsOut  = flag.Bool("stats", false, "print execution statistics (JSON) to stderr")
@@ -636,6 +636,7 @@ func writerForFormat(format string) core.ResultWriter {
 }
 
 // LINT.IfChange(readme_configuration)
+// Configuration and runnable override examples: docs/cli.md#configuration.
 // Keep wildcard patterns unchanged. Discovery and validation match paths
 // relative to their config root, or cwd for explicit --ignore overrides.
 func discoveryExclusions(cfg config.Config, overridden bool) scan.Exclusions {
@@ -646,7 +647,7 @@ func discoveryExclusions(cfg config.Config, overridden bool) scan.Exclusions {
 	return policy
 }
 
-// LINT.ThenChange(//README.md:readme_configuration, //test/integration/readme_examples_test.go:readme_configuration)
+// LINT.ThenChange(//docs/cli.md:readme_configuration, //test/integration/readme_examples_test.go:readme_configuration)
 
 func scanForLint(root string, skip []string, policies ...scan.Exclusions) ([]string, error) {
 	syn := core.CurrentDirectiveSyntax()
