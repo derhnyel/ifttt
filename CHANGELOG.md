@@ -2,11 +2,13 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-05
+
 - Load each change-set repository’s committed root config, including its directive prefix and Python comment settings. Cache verified snapshot commit IDs to avoid repeated Git/jj revision lookups.
 
 - Show VS Code hover help for directives without findings, using the CLI parser and current editor text. Add read-only `inspect` JSON output.
-- Keep linked-edit checks active when a guard is renamed and Git aligns its closing comment with another block.
-- Keep renamed guards linked when new neighbours are added, including copies of the previous body. Validate conditional target labels after committed repository config changes, even when their source is unchanged.
+- Keep linked-edit checks active when guards are renamed or retargeted and new neighbouring blocks are added, including copies of the previous body.
+- Validate conditional target labels after committed repository config changes, even when their source is unchanged. Respect ignored targets and skipped directories.
 - Add `LINT.Match` for labelled text equality and optional regex value extraction, including unchanged files and committed cross-repository snapshots.
 - Resolve blank extension binary settings to `ifttt` and run equality checks for empty custom diffs.
 

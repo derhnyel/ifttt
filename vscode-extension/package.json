@@ -2,7 +2,7 @@
   "name": "ifttt",
   "displayName": "IFTTT Lint",
   "description": "Run ifttt in VS Code and highlight required cross-file updates.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "derhnyel",
   "repository": {
     "type": "git",
