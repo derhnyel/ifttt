@@ -471,6 +471,10 @@ func TestScaffoldRejectsInvalidContractsBeforeWrites(t *testing.T) {
 			r := newRepo(t)
 			r.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: "+tc.prefix+"\n")
 			r.write(t, "source.go", "existing content\n")
+			before, err := os.ReadDir(r.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
 			out, stderr, code := r.run(t, "", "scaffold", "--source", "source.go", "--target", tc.target, "--label", tc.label)
 			if code == 0 {
 				t.Fatalf("invalid contract accepted: stdout=%s stderr=%s", out, stderr)
@@ -479,9 +483,17 @@ func TestScaffoldRejectsInvalidContractsBeforeWrites(t *testing.T) {
 			if string(data) != "existing content\n" {
 				t.Fatalf("invalid contract mutated source: %s", data)
 			}
-			if tc.target != "./source.go" {
-				if _, err := os.Stat(filepath.Join(r.dir, tc.target)); !os.IsNotExist(err) {
-					t.Fatalf("invalid contract created target: %v", err)
+			// Inspect entries because invalid target names cannot be statted on Windows.
+			after, err := os.ReadDir(r.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != len(before) {
+				t.Fatalf("invalid contract changed directory entries: before=%v after=%v", before, after)
+			}
+			for i := range before {
+				if before[i].Name() != after[i].Name() {
+					t.Fatalf("invalid contract changed directory entries: before=%v after=%v", before, after)
 				}
 			}
 		})

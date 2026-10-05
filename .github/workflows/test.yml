@@ -42,6 +42,17 @@ jobs:
         run: |
           python test/install-jj.py
           echo "$GITHUB_WORKSPACE/build/tools" >> "$GITHUB_PATH"
+      - name: Use short Windows test paths
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # jj's object names contain 128 characters. The default user temp
+          # directory plus Go's test names can exceed Windows' path limit.
+          $testTemp = Join-Path $env:RUNNER_TEMP 't'
+          New-Item -ItemType Directory -Force -Path $testTemp | Out-Null
+          "TMP=$testTemp" >> $env:GITHUB_ENV
+          "TEMP=$testTemp" >> $env:GITHUB_ENV
+          "TMPDIR=$testTemp" >> $env:GITHUB_ENV
       - run: go test -race ./...
       - name: CLI smoke test
         if: runner.os != 'Windows'
