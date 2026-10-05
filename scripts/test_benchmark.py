@@ -54,7 +54,7 @@ class HookTests(unittest.TestCase):
         import subprocess
         import tempfile
         from pathlib import Path
-        hook = Path(__file__).resolve().parents[1] / 'scripts/pre-commit-iflint.sh'
+        hook = Path(__file__).resolve().parents[1] / 'scripts/pre-commit-ifttt.sh'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             benchmark.git(root, 'init', '-q')
@@ -62,7 +62,7 @@ class HookTests(unittest.TestCase):
             benchmark.git(root, 'add', 'source.go')
             bindir = root / 'bin'
             bindir.mkdir()
-            executable = bindir / 'iflint'
+            executable = bindir / 'ifttt'
             executable.write_text("#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\nPath('captured.json').write_text(json.dumps(dict(args=sys.argv[1:], stdin=sys.stdin.read())))\n")
             executable.chmod(0o755)
             env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ['PATH'])
@@ -79,7 +79,7 @@ class HookTests(unittest.TestCase):
         import os
         import subprocess
         from pathlib import Path
-        hook = Path(__file__).resolve().parents[1] / 'scripts/pre-commit-iflint.sh'
+        hook = Path(__file__).resolve().parents[1] / 'scripts/pre-commit-ifttt.sh'
         result = subprocess.run(['/bin/bash', str(hook)], env=dict(os.environ, PATH='/usr/bin:/bin'), capture_output=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn(b'install it before committing', result.stderr)
@@ -97,7 +97,7 @@ class DeclarativeHookTests(unittest.TestCase):
         command = shlex.split(entry)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            executable = root / 'iflint'
+            executable = root / 'ifttt'
             executable.write_text("#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\nPath('captured.json').write_text(json.dumps(sys.argv[1:]))\n")
             executable.chmod(0o755)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], PRE_COMMIT_FROM_REF='', PRE_COMMIT_TO_REF='')
@@ -122,7 +122,7 @@ class ActionTests(unittest.TestCase):
         script = '\n'.join(line[8:] for line in script.splitlines())
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name, body in [('iflint', "import json,sys\nfrom pathlib import Path\nPath('captured.json').write_text(json.dumps(sys.argv[1:]))"), ('git', "import sys\nif sys.argv[1:] == ['rev-parse', 'HEAD']: print('b' * 40)")]:
+            for name, body in [('ifttt', "import json,sys\nfrom pathlib import Path\nPath('captured.json').write_text(json.dumps(sys.argv[1:]))"), ('git', "import sys\nif sys.argv[1:] == ['rev-parse', 'HEAD']: print('b' * 40)")]:
                 executable = root / name
                 executable.write_text('#!/usr/bin/env python3\n' + body + '\n')
                 executable.chmod(0o755)

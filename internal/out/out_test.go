@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,6 +74,10 @@ func TestJSONWorkspaceRootUsesWriteTimeDirectory(t *testing.T) {
 	w := out.JSON{IncludeWorkspaceRoot: true}
 	t.Chdir(t.TempDir())
 	want, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err = filepath.EvalSymlinks(want)
 	if err != nil {
 		t.Fatal(err)
 	}

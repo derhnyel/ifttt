@@ -4,9 +4,39 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestSelectedFilesAcceptPhysicalRepositoryAliases(t *testing.T) {
+	root := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "repo-alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("directory aliases unavailable: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "source.go"), []byte("source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ root, file string }{
+		{root, filepath.Join(alias, "source.go")},
+		{alias, filepath.Join(root, "source.go")},
+		{root, filepath.Join(alias, "**", "*.go")},
+	} {
+		files, err := rootSelectedFiles([]string{tc.file}, tc.root)
+		if err != nil || len(files) != 1 || filepath.IsAbs(files[0]) || strings.HasPrefix(files[0], "..") {
+			t.Fatalf("physical repository alias rejected: %v, %v", files, err)
+		}
+	}
+	outside := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(outside, []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rootSelectedFiles([]string{outside}, alias); err == nil {
+		t.Fatal("an unrelated file passed repository containment")
+	}
+}
 
 func TestRecursiveGlobSelection(t *testing.T) {
 	dir := t.TempDir()

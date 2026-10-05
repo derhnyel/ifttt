@@ -21,10 +21,14 @@ func TestDecodeCOctal(t *testing.T) {
 
 func TestNormalizePath(t *testing.T) {
 	cases := map[string]string{
-		`"a/file\040name.txt"`: "file name.txt",
-		"a/foo/bar":            "foo/bar",
-		"b/foo/bar":            "foo/bar",
-		"./c/../d.txt":         "d.txt",
+		`"a/file\040name.txt"`:         "file name.txt",
+		"a/foo/bar":                    "foo/bar",
+		"b/foo/bar":                    "foo/bar",
+		"./c/../d.txt":                 "d.txt",
+		"/dev/null":                    "/dev/null",
+		"a/a/nested/file.go":           "a/nested/file.go",
+		"b/b/nested/file.go":           "b/nested/file.go",
+		`"b/docs/api\040reference.md"`: "docs/api reference.md",
 	}
 	for in, want := range cases {
 		if got := NormalizePath(in); got != want {

@@ -1,7 +1,7 @@
 package ifttt
 
 import (
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -32,7 +32,9 @@ func DecodeCOctal(s string) string {
 	return string(out)
 }
 
-// NormalizePath cleans diff paths (strip quotes, a/b prefixes, decode octal)
+// NormalizePath cleans Git diff paths (strip quotes, a/b prefixes, decode octal).
+// Repository paths use forward slashes on every host; this is not a filesystem
+// path normalizer because native backslashes can look like Git octal escapes.
 func NormalizePath(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if l := len(raw); l >= 2 && ((raw[0] == '"' && raw[l-1] == '"') || (raw[0] == '\'' && raw[l-1] == '\'')) {
@@ -42,7 +44,7 @@ func NormalizePath(raw string) string {
 	if strings.HasPrefix(raw, "a/") || strings.HasPrefix(raw, "b/") {
 		raw = raw[2:]
 	}
-	raw = filepath.Clean(raw)
+	raw = path.Clean(raw)
 	return raw
 }
 

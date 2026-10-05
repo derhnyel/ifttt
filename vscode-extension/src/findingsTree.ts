@@ -32,7 +32,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 			if (typeof element.count === 'number') {
 				item.description = `${element.count}`;
 			}
-			item.contextValue = 'iflintFile';
+			item.contextValue = 'iftttFile';
 			item.iconPath = new vscode.ThemeIcon('file');
 			return item;
 		}
@@ -41,7 +41,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 				element.label,
 				vscode.TreeItemCollapsibleState.Collapsed
 			);
-			item.contextValue = 'iflintTarget';
+			item.contextValue = 'iftttTarget';
 			item.iconPath = new vscode.ThemeIcon('arrow-right');
 			if (typeof element.count === 'number') {
 				item.description = `${element.count}`;
@@ -72,7 +72,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 			title: 'Open Finding',
 			arguments: [uri, line]
 		};
-		item.contextValue = 'iflintFinding';
+		item.contextValue = 'iftttFinding';
 		return item;
 	}
 

@@ -25,7 +25,7 @@ export function isRemoteTarget(target: string): boolean {
 }
 
 export class DiagnosticAggregator {
-	private readonly collection = vscode.languages.createDiagnosticCollection('iflint');
+	private readonly collection = vscode.languages.createDiagnosticCollection('ifttt');
 	private readonly emitter = new vscode.EventEmitter<void>();
 	private readonly byFile = new Map<string, LintFinding[]>();
 	private workspaceRoot = '';
@@ -142,7 +142,7 @@ export class DiagnosticAggregator {
 					: vscode.DiagnosticSeverity.Error;
 
 			const diagnostic = new vscode.Diagnostic(range, finding.message, severity);
-			diagnostic.source = 'iflint';
+			diagnostic.source = 'ifttt';
 			diagnostic.code = finding.ruleId;
 
 			const diagnostics = diagnosticsByFile.get(uri.fsPath) ?? [];

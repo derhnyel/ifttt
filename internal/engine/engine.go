@@ -25,6 +25,7 @@ import (
 
 type Options struct {
 	// RevisionChanges and ReverseCandidates describe an immutable source snapshot.
+	// RevisionChanges keys and FileChanges paths use repository forward slashes.
 	RevisionChanges   map[string]*core.FileChanges
 	ReverseCandidates []string
 	// DependencyChanges supplies foreign changed-line evidence without adding sources.
@@ -120,11 +121,12 @@ func parseChangedLinesReader(r io.Reader, captureText bool, pooled bool) (map[st
 		if fp == nil {
 			continue
 		}
-		path := filepath.Clean(fp.NewPath)
+		// The diff parser already decoded and normalized repository paths.
+		path := fp.NewPath
 		deleted := fp.NewPath == "/dev/null"
 		renamed := fp.OldPath != fp.NewPath && fp.OldPath != "/dev/null" && !deleted
 		if deleted {
-			path = filepath.Clean(fp.OldPath)
+			path = fp.OldPath
 		}
 		var (
 			fc      *core.FileChanges
@@ -152,7 +154,7 @@ func parseChangedLinesReader(r io.Reader, captureText bool, pooled bool) (map[st
 				HasDirectiveHint: false,
 			}
 		}
-		fc.OldFile = filepath.Clean(fp.OldPath)
+		fc.OldFile = fp.OldPath
 		fc.Deleted, fc.Renamed = deleted, renamed
 		fc.RemovedInNew = make(map[int]string)
 		hasChanges := false
@@ -293,7 +295,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		}
 	}
 	for _, path := range opts.StructuralFiles {
-		path = filepath.Clean(path)
+		path = filepath.ToSlash(filepath.Clean(path))
 		if _, ok := changes[path]; !ok {
 			changes[path] = &core.FileChanges{File: path, HasDirectiveHint: true}
 		}
@@ -341,7 +343,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 	if opts.SourceFiles != nil {
 		selected = make(map[string]bool, len(opts.SourceFiles))
 		for _, p := range opts.SourceFiles {
-			selected[filepath.Clean(p)] = true
+			selected[filepath.ToSlash(filepath.Clean(p))] = true
 		}
 	}
 	var changed []string
@@ -418,7 +420,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 			seen[path] = true
 		}
 		for _, candidate := range reverseCandidates {
-			candidate = filepath.Clean(candidate)
+			candidate = filepath.ToSlash(filepath.Clean(candidate))
 			if seen[candidate] || pathInSkippedDir(candidate, skipSet) || matchAnyFile(candidate, ign) {
 				continue
 			}
@@ -992,6 +994,7 @@ func pathInSkippedDir(path string, skip map[string]struct{}) bool {
 }
 
 // ResolveTarget resolves a selector using the configured directive grammar.
+// Local target paths use forward slashes on every host.
 // Workspace-root targets remain relative so callers can apply their own root.
 func ResolveTarget(src, raw string) core.TargetRef {
 	return resolveTarget(src, raw)
@@ -1030,7 +1033,7 @@ func resolveTarget(src, raw string) core.TargetRef {
 		name = filepath.Join(filepath.Dir(src), name)
 	}
 	if !isRemotePath(name) {
-		name = filepath.Clean(name)
+		name = filepath.ToSlash(filepath.Clean(name))
 	}
 	return core.TargetRef{Raw: raw, Path: name, Label: lbl}
 }

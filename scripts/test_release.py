@@ -16,15 +16,15 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / 'vscode-extension').mkdir(parents=True)
-        (self.root / 'go.mod').write_text('module github.com/acme/iflint\n\ngo 1.26.0\n')
+        (self.root / 'go.mod').write_text('module github.com/acme/ifttt\n\ngo 1.26.0\n')
         (self.root / 'LICENSE').write_text('Fixture license text\n')
-        self.package = dict(name='ifttt-lint-helper', publisher='acme', version='0.1.0', license='MIT', repository={'url': 'https://github.com/acme/iflint.git'})
+        self.package = dict(name='ifttt', publisher='acme', version='0.1.0', license='MIT', repository={'url': 'https://github.com/acme/ifttt.git'})
         self.write_package()
         self.assets = self.root / 'assets'
         self.assets.mkdir()
         for name in release.BINARIES:
             (self.assets / name).write_bytes(('fixture ' + name).encode())
-        with zipfile.ZipFile(self.assets / 'ifttt-lint-helper-0.1.0.vsix', 'w') as archive:
+        with zipfile.ZipFile(self.assets / 'ifttt-0.1.0.vsix', 'w') as archive:
             archive.writestr('extension/package.json', json.dumps(self.package))
             archive.writestr('extension/LICENSE.txt', 'Fixture license text\n')
         self.commit = 'a' * 40
@@ -35,8 +35,8 @@ class ReleaseTests(unittest.TestCase):
         (self.root / 'vscode-extension/package.json').write_text(json.dumps(self.package))
 
     def test_public_metadata_accepts_real_identity_and_matching_version(self):
-        release.check_metadata(self.root, 'acme/iflint', 'v0.1.0')
-        release.check_metadata(self.root, 'acme/iflint', 'v0.1.0-rc.1')
+        release.check_metadata(self.root, 'acme/ifttt', 'v0.1.0')
+        release.check_metadata(self.root, 'acme/ifttt', 'v0.1.0-rc.1')
 
     def test_public_metadata_rejects_placeholders_missing_license_module_layout_and_version(self):
         mutations = [lambda: (self.root / 'LICENSE').unlink(),
@@ -44,16 +44,16 @@ class ReleaseTests(unittest.TestCase):
                      lambda: self.package.update(version='0.2.0'),
                      lambda: self.package.update(license=''),
                      lambda: self.package.update(repository={'url':'https://github.com/other/repo'}),
-                     lambda: (self.root / 'go.mod').write_text('module github.com/acme/iflint/new\n')]
+                     lambda: (self.root / 'go.mod').write_text('module github.com/acme/ifttt/new\n')]
         for mutate in mutations:
             with self.subTest(mutate=mutate):
                 (self.root / 'LICENSE').write_text('Fixture license text\n')
-                (self.root / 'go.mod').write_text('module github.com/acme/iflint\n')
-                self.package.update(publisher='acme',version='0.1.0',license='MIT',repository={'url':'https://github.com/acme/iflint.git'})
+                (self.root / 'go.mod').write_text('module github.com/acme/ifttt\n')
+                self.package.update(publisher='acme',version='0.1.0',license='MIT',repository={'url':'https://github.com/acme/ifttt.git'})
                 mutate(); self.write_package()
-                with self.assertRaises(ValueError): release.check_metadata(self.root, 'acme/iflint', 'v0.1.0')
+                with self.assertRaises(ValueError): release.check_metadata(self.root, 'acme/ifttt', 'v0.1.0')
         for tag in ['dev', 'v1', 'v0.1.0;command', '../v0.1.0', 'v0.1.0\n', 'v0.1.0-']:
-            with self.subTest(tag=tag), self.assertRaises(ValueError): release.check_metadata(self.root, 'acme/iflint', tag)
+            with self.subTest(tag=tag), self.assertRaises(ValueError): release.check_metadata(self.root, 'acme/ifttt', tag)
 
     def test_seal_and_verify_exact_binary_and_vsix_set(self):
         release.seal_assets(self.assets)
@@ -81,7 +81,7 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError): release.seal_assets(self.assets)
 
     def test_vsix_gate_requires_embedded_license_and_correct_identity(self):
-        name = self.assets / 'ifttt-lint-helper-0.1.0.vsix'
+        name = self.assets / 'ifttt-0.1.0.vsix'
         for package, include_license in [({**self.package,'publisher':'other'}, True), (self.package, False)]:
             with self.subTest(package=package, license=include_license):
                 with zipfile.ZipFile(name, 'w') as archive:
@@ -94,10 +94,10 @@ class ReleaseTests(unittest.TestCase):
         release.seal_assets(self.assets)
         for existing in [dict(isDraft=False,targetCommitish=self.commit,tagName='v0.1.0'), dict(isDraft=True,targetCommitish='b'*40,tagName='v0.1.0')]:
             with self.subTest(existing=existing), patch.object(release,'get_release',return_value=existing), patch.object(release,'gh') as gh:
-                with self.assertRaises(ValueError): release.create_draft(self.assets,'acme/iflint','v0.1.0',self.commit)
+                with self.assertRaises(ValueError): release.create_draft(self.assets,'acme/ifttt','v0.1.0',self.commit)
                 gh.assert_not_called()
         with patch.object(release,'get_release',return_value=None), patch.object(release,'gh') as gh:
-            release.create_draft(self.assets,'acme/iflint','v0.1.0',self.commit)
+            release.create_draft(self.assets,'acme/ifttt','v0.1.0',self.commit)
             args=gh.call_args.args[0]
             self.assertIn('--draft',args); self.assertIn('--verify-tag',args)
             self.assertIn(str(self.assets/'SHA256SUMS'),args)
@@ -106,37 +106,37 @@ class ReleaseTests(unittest.TestCase):
         release.seal_assets(self.assets)
         existing = dict(isDraft=True,targetCommitish=self.commit,tagName='v0.1.0')
         with patch.object(release,'get_release',return_value=existing), patch.object(release,'gh') as gh:
-            release.publish(self.assets,'acme/iflint','v0.1.0',self.commit,self.package)
+            release.publish(self.assets,'acme/ifttt','v0.1.0',self.commit,self.package)
             self.assertIn('--draft=false',gh.call_args.args[0])
         existing['isDraft']=False
         with patch.object(release,'get_release',return_value=existing), patch.object(release,'gh') as gh:
-            release.publish(self.assets,'acme/iflint','v0.1.0',self.commit,self.package)
+            release.publish(self.assets,'acme/ifttt','v0.1.0',self.commit,self.package)
             gh.assert_not_called()
         (self.assets / release.BINARIES[0]).write_bytes(b'corrupted')
         with patch.object(release,'get_release',return_value=existing), patch.object(release,'gh') as gh:
-            with self.assertRaises(ValueError): release.publish(self.assets,'acme/iflint','v0.1.0',self.commit,self.package)
+            with self.assertRaises(ValueError): release.publish(self.assets,'acme/ifttt','v0.1.0',self.commit,self.package)
             gh.assert_not_called()
 
     def test_moved_remote_tag_blocks_draft_creation(self):
         release.seal_assets(self.assets)
         with patch.object(release,'tag_commit',return_value='b'*40,create=True), patch.object(release,'get_release',return_value=None), patch.object(release,'gh') as gh:
-            with self.assertRaises(ValueError): release.create_draft(self.assets,'acme/iflint','v0.1.0',self.commit)
+            with self.assertRaises(ValueError): release.create_draft(self.assets,'acme/ifttt','v0.1.0',self.commit)
             gh.assert_not_called()
 
     def test_verify_command_validates_vsix_metadata_when_repository_is_given(self):
-        name = self.assets / 'ifttt-lint-helper-0.1.0.vsix'
+        name = self.assets / 'ifttt-0.1.0.vsix'
         with zipfile.ZipFile(name, 'w') as archive:
             archive.writestr('extension/package.json', json.dumps({**self.package, 'publisher':'other'}))
             archive.writestr('extension/LICENSE.txt', 'Fixture license text')
         release.seal_assets(self.assets)
         args = ['release.py', 'verify', '--assets', str(self.assets), '--require-vsix',
-                '--repository', 'acme/iflint', '--tag', 'v0.1.0']
+                '--repository', 'acme/ifttt', '--tag', 'v0.1.0']
         with patch.object(release, 'ROOT', self.root), patch('sys.argv', args):
             with self.assertRaises(SystemExit) as caught: release.main()
             self.assertEqual(caught.exception.code, 1)
 
     def test_native_smoke_runs_structural_success_and_failure_after_version(self):
-        version = f'iflint v0.1.0 (commit {self.commit})\n'
+        version = f'ifttt v0.1.0 (commit {self.commit})\n'
         responses = [subprocess.CompletedProcess([],0,version,''),
                      subprocess.CompletedProcess([],0,'{"errors":[]}',''),
                      subprocess.CompletedProcess([],1,'{"errors":[{"ruleId":"label_missing"}]}','')]
@@ -154,14 +154,14 @@ class RemoteReleaseStateTests(unittest.TestCase):
         for objects in [[dict(type='commit', sha=commit)],
                         [dict(type='tag', sha='b'*40), dict(type='commit', sha=commit)]]:
             with self.subTest(objects=objects), patch.object(release, 'gh', side_effect=[json.dumps({'object': o}) for o in objects]):
-                self.assertEqual(release.tag_commit('acme/iflint', 'v0.1.0'), commit)
+                self.assertEqual(release.tag_commit('acme/ifttt', 'v0.1.0'), commit)
         with patch.object(release, 'gh', return_value=json.dumps({'object': {'type':'tree', 'sha':commit}})):
-            with self.assertRaises(ValueError): release.tag_commit('acme/iflint', 'v0.1.0')
+            with self.assertRaises(ValueError): release.tag_commit('acme/ifttt', 'v0.1.0')
 
     def test_missing_release_is_distinct_from_authentication_failure(self):
         missing = subprocess.CalledProcessError(1, ['gh'], stderr='release not found')
         denied = subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 401: Bad credentials')
         with patch.object(release, 'gh', side_effect=missing):
-            self.assertIsNone(release.get_release('acme/iflint', 'v0.1.0'))
+            self.assertIsNone(release.get_release('acme/ifttt', 'v0.1.0'))
         with patch.object(release, 'gh', side_effect=denied):
-            with self.assertRaises(subprocess.CalledProcessError): release.get_release('acme/iflint', 'v0.1.0')
+            with self.assertRaises(subprocess.CalledProcessError): release.get_release('acme/ifttt', 'v0.1.0')

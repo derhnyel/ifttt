@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -21,13 +22,19 @@ func snapshotTools(t *testing.T) {
 	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-type snapshotFixture struct{ root, base, head string }
+type snapshotFixture struct{ root, base, head, path string }
 
 func makeSnapshotFixture(t *testing.T, kind string) snapshotFixture {
 	t.Helper()
+	return makeSnapshotFixtureWithIndexMetadata(t, kind, runtime.GOOS == "windows")
+}
+
+func makeSnapshotFixtureWithIndexMetadata(t *testing.T, kind string, indexMetadata bool) snapshotFixture {
+	t.Helper()
 	snapshotTools(t)
 	root := t.TempDir()
-	if kind == "git" {
+	nativeJJ := kind == "jj" && !indexMetadata
+	if !nativeJJ {
 		command(t, root, "git", "init", "-q")
 		command(t, root, "git", "config", "user.name", "Test")
 		command(t, root, "git", "config", "user.email", "test@example.invalid")
@@ -36,13 +43,21 @@ func makeSnapshotFixture(t *testing.T, kind string) snapshotFixture {
 		command(t, root, "jj", "config", "set", "--repo", "user.name", "Test")
 		command(t, root, "jj", "config", "set", "--repo", "user.email", "test@example.invalid")
 	}
+	path := "a space\n[abc].go"
+	if indexMetadata {
+		// Windows disallows control characters in filenames. Unicode still
+		// exercises Git's byte quoting and both backends' NUL-delimited paths.
+		path = "a space [abc]☃.go"
+		command(t, root, "git", "config", "core.filemode", "false")
+		command(t, root, "git", "config", "core.symlinks", "false")
+	}
 	write := func(path, data string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(root, path), []byte(data), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write("a space\n[abc].go", "// LINT.IfChange(old)\nold\n")
+	write(path, "// LINT.IfChange(old)\nold\n")
 	write("become-link", "regular\n")
 	write("binary", "\x00\x01\x02")
 	write("empty", "")
@@ -50,8 +65,15 @@ func makeSnapshotFixture(t *testing.T, kind string) snapshotFixture {
 	write("plain", "plain\n")
 	commit := func(label string) string {
 		t.Helper()
-		if kind == "git" {
+		if !nativeJJ {
 			command(t, root, "git", "add", ".")
+			if indexMetadata && label == "head" {
+				// Commit real symlink and executable entries without requiring
+				// symlink privileges or Unix permission bits on the filesystem.
+				blob := strings.TrimSpace(command(t, root, "git", "hash-object", "-w", "become-link"))
+				command(t, root, "git", "update-index", "--cacheinfo", "120000", blob, "become-link")
+				command(t, root, "git", "update-index", "--chmod=+x", "mode")
+			}
 			command(t, root, "git", "commit", "-qm", label)
 			return strings.TrimSpace(command(t, root, "git", "rev-parse", "HEAD"))
 		}
@@ -59,26 +81,36 @@ func makeSnapshotFixture(t *testing.T, kind string) snapshotFixture {
 		return command(t, root, "jj", "--ignore-working-copy", "log", "--no-graph", "-r", "@", "-T", "commit_id")
 	}
 	base := commit("base")
-	if kind == "jj" {
+	if nativeJJ {
 		command(t, root, "jj", "new")
 	}
-	write("a space\n[abc].go", "// LINT.IfChange(head)\nhead\n")
+	write(path, "// LINT.IfChange(head)\nhead\n")
 	for _, path := range []string{"binary", "empty", "become-link"} {
 		if err := os.Remove(filepath.Join(root, path)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Symlink("plain", filepath.Join(root, "become-link")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(filepath.Join(root, "mode"), 0755); err != nil {
-		t.Fatal(err)
+	if indexMetadata {
+		write("become-link", "plain")
+	} else {
+		if err := os.Symlink("plain", filepath.Join(root, "become-link")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(filepath.Join(root, "mode"), 0755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	head := commit("head")
-	write("a space\n[abc].go", "dirty, no directives\n")
+	if kind == "jj" && indexMetadata {
+		command(t, root, "jj", "git", "init", "--colocate")
+		command(t, root, "jj", "config", "set", "--repo", "user.name", "Test")
+		command(t, root, "jj", "config", "set", "--repo", "user.email", "test@example.invalid")
+		command(t, root, "jj", "--ignore-working-copy", "edit", head)
+	}
+	write(path, "dirty, no directives\n")
 	write("plain", "// LINT.IfChange(dirty)\n")
 	write("untracked", "// LINT.IfChange(untracked)\n")
-	return snapshotFixture{root, base, head}
+	return snapshotFixture{root: root, base: base, head: head, path: path}
 }
 
 func TestSnapshotsUseCommittedTreesWithoutMutatingWorkingCopy(t *testing.T) {
@@ -105,12 +137,12 @@ func TestSnapshotsUseCommittedTreesWithoutMutatingWorkingCopy(t *testing.T) {
 			if err != nil || id != f.head {
 				t.Fatalf("resolve: %q %v", id, err)
 			}
-			data, err := b.ReadFileAt(ctx, id, "a space\n[abc].go")
+			data, err := b.ReadFileAt(ctx, id, f.path)
 			if err != nil || string(data) != "// LINT.IfChange(head)\nhead\n" {
 				t.Fatalf("read: %q %v", data, err)
 			}
 			files, err := b.DirectiveFilesAt(ctx, id, "LINT.")
-			if err != nil || !reflect.DeepEqual(files, []string{"a space\n[abc].go"}) {
+			if err != nil || !reflect.DeepEqual(files, []string{f.path}) {
 				t.Fatalf("files: %q %v", files, err)
 			}
 			files, err = b.DirectiveFilesAt(ctx, id, "absent needle")
@@ -121,7 +153,7 @@ func TestSnapshotsUseCommittedTreesWithoutMutatingWorkingCopy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, err = os.ReadFile(filepath.Join(f.root, "a space\n[abc].go"))
+			data, err = os.ReadFile(filepath.Join(f.root, f.path))
 			if err != nil || string(data) != "dirty, no directives\n" {
 				t.Fatalf("working copy mutated: %q %v", data, err)
 			}
@@ -147,9 +179,53 @@ func TestSnapshotChangesIncludeBinaryEmptyDeletionAndModeChanges(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []SnapshotChange{{Path: "a space\n[abc].go"}, {Path: "become-link", TypeChanged: true}, {Path: "binary", Deleted: true}, {Path: "empty", Deleted: true}, {Path: "mode"}}
+			want := []SnapshotChange{{Path: f.path}, {Path: "become-link", TypeChanged: true}, {Path: "binary", Deleted: true}, {Path: "empty", Deleted: true}, {Path: "mode"}}
 			if !reflect.DeepEqual(changes, want) {
 				t.Fatalf("changes: %#v want %#v", changes, want)
+			}
+		})
+	}
+}
+
+// Exercise the Windows fixture strategy on every platform so its imported jj
+// trees cannot silently lose symlink, executable, or quoted-path coverage.
+func TestSnapshotIndexMetadataPreservesPortableFixtureCoverage(t *testing.T) {
+	for _, kind := range []string{"git", "jj"} {
+		t.Run(kind, func(t *testing.T) {
+			f := makeSnapshotFixtureWithIndexMetadata(t, kind, true)
+			ctx := context.Background()
+			b, err := OpenSnapshot(ctx, f.root, "auto")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if b.Kind != kind {
+				t.Fatalf("kind: %s, want %s", b.Kind, kind)
+			}
+			rev := "HEAD"
+			if kind == "jj" {
+				rev = "@"
+			}
+			if id, err := b.ResolveRevision(ctx, rev); err != nil || id != f.head {
+				t.Fatalf("head: %q, want %s: %v", id, f.head, err)
+			}
+			if data, err := b.ReadFileAt(ctx, f.head, f.path); err != nil || string(data) != "// LINT.IfChange(head)\nhead\n" {
+				t.Fatalf("quoted path: %q %v", data, err)
+			}
+			if files, err := b.DirectiveFilesAt(ctx, f.head, "LINT."); err != nil || !reflect.DeepEqual(files, []string{f.path}) {
+				t.Fatalf("directive paths: %q %v", files, err)
+			}
+			changes, err := b.ChangesAt(ctx, f.base, f.head)
+			want := []SnapshotChange{{Path: f.path}, {Path: "become-link", TypeChanged: true}, {Path: "binary", Deleted: true}, {Path: "empty", Deleted: true}, {Path: "mode"}}
+			if err != nil || !reflect.DeepEqual(changes, want) {
+				t.Fatalf("changes: %#v, want %#v: %v", changes, want, err)
+			}
+			if _, err := b.ReadFileAt(ctx, f.head, "become-link"); err == nil {
+				t.Fatal("symlink accepted")
+			}
+			for _, id := range []string{f.base, f.head} {
+				if data, err := b.ReadFileAt(ctx, id, "mode"); err != nil || string(data) != "unchanged\n" {
+					t.Fatalf("mode-only change has changed contents: %q %v", data, err)
+				}
 			}
 		})
 	}
@@ -299,7 +375,7 @@ func TestSnapshotGitCommitIDsIgnoreMutableReplacementRefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := b.ReadFileAt(context.Background(), f.head, "a space\n[abc].go")
+	data, err := b.ReadFileAt(context.Background(), f.head, f.path)
 	if err != nil || string(data) != "// LINT.IfChange(head)\nhead\n" {
 		t.Fatalf("pinned ID followed mutable replacement: %q %v", data, err)
 	}

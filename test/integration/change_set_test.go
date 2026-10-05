@@ -41,8 +41,15 @@ func changeSetFixture(t *testing.T) (repo, repo, string, string) {
 	return a, b, changeSetCommit(t, a), changeSetCommit(t, b)
 }
 func TestChangeSetPairedSnapshots(t *testing.T) {
-	a, b, aBase, bBase := changeSetFixture(t)
-	a.write(t, "source.go", source("github://acme/target/target.go", "new"))
+	a, b := newRepo(t), newRepo(t)
+	if err := os.Mkdir(filepath.Join(b.dir, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	const targetPath = "github://acme/target/nested/target.go"
+	a.write(t, "source.go", source(targetPath, "old"))
+	b.write(t, "nested/target.go", target("old"))
+	aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+	a.write(t, "source.go", source(targetPath, "new"))
 	aHead := changeSetCommit(t, a)
 	output := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bBase), "--format=json")
 	var report struct {
@@ -55,14 +62,14 @@ func TestChangeSetPairedSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Errors) != 1 || report.Errors[0].Repository != "acme/source" || report.Errors[0].HeadRevision != aHead || report.Errors[0].BaseRevision != aBase || report.Errors[0].File != filepath.Join(canonicalRoot, "source.go") || report.Errors[0].TargetPath != "github://acme/target/target.go" || report.Errors[0].RuleID != "then_label_missing" {
+	if len(report.Errors) != 1 || report.Errors[0].Repository != "acme/source" || report.Errors[0].HeadRevision != aHead || report.Errors[0].BaseRevision != aBase || report.Errors[0].File != filepath.Join(canonicalRoot, "source.go") || report.Errors[0].TargetPath != targetPath || report.Errors[0].RuleID != "then_label_missing" {
 		t.Fatalf("missing repository-aware dependency diagnostic: %s", output)
 	}
-	b.write(t, "target.go", target("new"))
+	b.write(t, "nested/target.go", target("new"))
 	bHead := changeSetCommit(t, b)
 	manifest := changeSetManifest(t, a, b, aBase, aHead, bBase, bHead)
 	a.write(t, "source.go", "// SENTRY.IfChange(\"broken working file\")\n")
-	b.write(t, "target.go", "dirty working contents without labels\n")
+	b.write(t, "nested/target.go", "dirty working contents without labels\n")
 	requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
 }
 func TestChangeSetUnrelatedTargetEditFails(t *testing.T) {

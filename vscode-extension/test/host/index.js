@@ -5,7 +5,7 @@ const vscode = require('vscode');
 
 exports.run = async function () {
  try {
- const extension = vscode.extensions.all.find(e => e.packageJSON.name === 'ifttt-lint-helper');
+ const extension = vscode.extensions.all.find(e => e.packageJSON.name === 'ifttt');
  assert.ok(extension, 'development extension must load');
  await extension.activate();
  assert.equal(vscode.workspace.isTrusted, true, 'isolated test workspace must be trusted');
@@ -22,7 +22,7 @@ exports.run = async function () {
  const secondaryDocument = await vscode.workspace.openTextDocument(secondaryUri);
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- const diagnostics = vscode.languages.getDiagnostics(uri).filter(d => d.source === 'iflint');
+ const diagnostics = vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt');
  assert.equal(diagnostics.length, 1, 'real extension must publish the real CLI finding');
  assert.equal(diagnostics[0].code, 'then_missing');
  assert.equal(diagnostics[0].range.start.line, 2, 'CLI one-based line must become editor zero-based');
@@ -34,12 +34,12 @@ exports.run = async function () {
  const primaryFix = actions.find(action => action.command?.command === 'iftttLint.applyFix');
  await vscode.commands.executeCommand(primaryFix.command.command, ...(primaryFix.command.arguments ?? []));
  const target = await fs.readFile(path.join(root, 'target.go'), 'utf8');
- assert.match(target, /TODO\(iflint\)/, 'actual fix command must update target');
+ assert.match(target, /TODO\(ifttt\)/, 'actual fix command must update target');
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'iflint').length, 0, 'satisfied co-change must clear diagnostics');
+ assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 0, 'satisfied co-change must clear diagnostics');
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'iflint').length, 0, 'native run must use the active second folder and its binary settings');
+ assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt').length, 0, 'native run must use the active second folder and its binary settings');
  await vscode.commands.executeCommand('iftttLint.jumpToLabel', path.join(root, 'navigation.go'), 'primary_label');
  assert.equal(vscode.window.activeTextEditor.selection.start.line, 1, 'SENTRY navigation must use the target folder while a LINT document is active');
  await vscode.window.showTextDocument(document);
@@ -54,25 +54,35 @@ exports.run = async function () {
  const deadline = Date.now() + 20000;
  let secondaryDiagnostics;
  do {
-  secondaryDiagnostics = vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'iflint');
+  secondaryDiagnostics = vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt');
   if (secondaryDiagnostics.length) break;
   await new Promise(resolve => setTimeout(resolve, 100));
  } while (Date.now() < deadline);
  assert.equal(secondaryDiagnostics.length, 1, 'saving the inactive document must use its folder runOnSave setting and native repository');
  assert.equal(secondaryDiagnostics[0].code, 'then_label_missing');
  await vscode.window.showTextDocument(document);
- const secondaryActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', secondaryUri, secondaryDiagnostics[0].range);
- const secondaryFix = secondaryActions.find(action => action.command?.command === 'iftttLint.applyFix');
- assert.ok(secondaryFix, 'label co-change must offer the supported placeholder fix');
+ // Save-triggered diagnostics reach the extension host before VS Code's
+ // code-action service necessarily receives them. Wait for the actual action,
+ // rather than treating the first empty provider result as a product failure.
+ const actionDeadline = Date.now() + 20000;
+ let secondaryFix;
+ let secondaryActions;
+ do {
+  secondaryActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', secondaryUri, secondaryDiagnostics[0].range);
+  secondaryFix = secondaryActions.find(action => action.command?.command === 'iftttLint.applyFix');
+  if (secondaryFix) break;
+  await new Promise(resolve => setTimeout(resolve, 100));
+ } while (Date.now() < actionDeadline);
+ assert.ok(secondaryFix, `label co-change must offer the supported placeholder fix; received ${JSON.stringify(secondaryActions)}`);
  await vscode.commands.executeCommand(secondaryFix.command.command, ...(secondaryFix.command.arguments ?? []));
- assert.match(await fs.readFile(path.join(secondary, 'target.go'), 'utf8'), /TODO\(iflint\)/, 'inactive quick fix must modify its finding folder');
+ assert.match(await fs.readFile(path.join(secondary, 'target.go'), 'utf8'), /TODO\(ifttt\)/, 'inactive quick fix must modify its finding folder');
  assert.equal(await fs.readFile(path.join(root, 'target.go'), 'utf8'), target, 'inactive quick fix must preserve the active folder target');
 
  // Exercise Create label through the actual default LINT helper command.
  await fs.writeFile(path.join(secondary, 'target.go'), '// shared_label mentioned here\nvar target = 1\n');
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- const missingLabels = vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'iflint');
+ const missingLabels = vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt');
  assert.equal(missingLabels.length, 1);
  assert.equal(missingLabels[0].code, 'label_missing');
  const labelActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', secondaryUri, missingLabels[0].range);
@@ -87,20 +97,20 @@ exports.run = async function () {
  await fs.writeFile(path.join(root, 'target.go'), 'var target = 1\n');
  await vscode.window.showTextDocument(document);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'iflint').length, 1, 'nested cwd must attach the finding to the repo-root source');
+ assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 1, 'nested cwd must attach the finding to the repo-root source');
  await fs.writeFile(path.join(secondary, 'target.go'), '// LINT.IfChange(shared_label)\nvar target = 1\n// LINT.ThenChange()\n');
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'iflint').length, 1);
- assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'iflint').length, 1, 'two repositories must retain both reports');
+ assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt').length, 1);
+ assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 1, 'two repositories must retain both reports');
  await vscode.commands.executeCommand('iftttLint.applyFix', secondaryUri);
- assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'iflint').length, 0);
- assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'iflint').length, 1, 'clearing the second repository must retain the first');
+ assert.equal(vscode.languages.getDiagnostics(secondaryUri).filter(d => d.source === 'ifttt').length, 0);
+ assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 1, 'clearing the second repository must retain the first');
  const primarySource = await fs.readFile(path.join(root, 'source.go'), 'utf8');
  await fs.writeFile(path.join(root, 'source.go'), '// SENTRY.Ignore("all")\n' + primarySource);
  await vscode.window.showTextDocument(document);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'iflint').length, 0, 'ignored directives must stay out of Problems');
+ assert.equal(vscode.languages.getDiagnostics(uri).filter(d => d.source === 'ifttt').length, 0, 'ignored directives must stay out of Problems');
  const ignoredActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', uri, new vscode.Range(3, 0, 3, 100));
  assert.equal(ignoredActions.some(action => action.command?.command.startsWith('iftttLint.')), false, 'ignored directives must offer no active quick actions');
  // Findings may live outside an opened nested folder; commands must use its owner settings.
@@ -111,7 +121,7 @@ exports.run = async function () {
  await vscode.workspace.openTextDocument(externalSource);
  await vscode.window.showTextDocument(nestedDriver);
  await vscode.commands.executeCommand('iftttLint.run');
- let externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'iflint');
+ let externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt');
  assert.equal(externalDiagnostics.length, 1, 'nested owner must publish repo-root source outside its opened folder');
  let externalActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', externalSource, externalDiagnostics[0].range);
  const externalJump = externalActions.find(action => action.command?.command === 'iftttLint.jumpToLabel');
@@ -123,12 +133,12 @@ exports.run = async function () {
  assert.ok(externalFix);
  await vscode.window.showTextDocument(document);
  await vscode.commands.executeCommand(externalFix.command.command, ...externalFix.command.arguments);
- assert.match(await fs.readFile(path.join(nestedRoot, 'target.go'), 'utf8'), /TODO\(iflint\)/, 'outside-source quick fix must retain its nested owner');
- assert.equal(vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'iflint').length, 0);
+ assert.match(await fs.readFile(path.join(nestedRoot, 'target.go'), 'utf8'), /TODO\(ifttt\)/, 'outside-source quick fix must retain its nested owner');
+ assert.equal(vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt').length, 0);
  await fs.writeFile(path.join(nestedRoot, 'target.go'), 'var target = 1\n');
  await vscode.window.showTextDocument(nestedDriver);
  await vscode.commands.executeCommand('iftttLint.run');
- externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'iflint');
+ externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt');
  assert.equal(externalDiagnostics[0].code, 'label_missing');
  externalActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', externalSource, externalDiagnostics[0].range);
  const externalScaffold = externalActions.find(action => action.command?.command === 'iftttLint.scaffoldDirective');
@@ -142,7 +152,7 @@ exports.run = async function () {
  await fs.writeFile(path.join(nestedRoot, 'target.go'), '// LINT.IfChange(shared_label)\none\n// LINT.ThenChange()\n// LINT.IfChange(shared_label)\ntwo\n// LINT.ThenChange()\n');
  await vscode.window.showTextDocument(nestedDriver);
  await vscode.commands.executeCommand('iftttLint.run');
- externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'iflint');
+ externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt');
  assert.ok(externalDiagnostics.length > 0);
  assert.ok(externalDiagnostics.every(diagnostic => diagnostic.code === 'label_ambiguous'));
  externalActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', externalSource, externalDiagnostics[0].range);
@@ -155,7 +165,7 @@ exports.run = async function () {
  await fs.writeFile(path.join(nestedRoot, 'target file.go'), '// LINT.IfChange(shared_label)\nvar target = 2\n// LINT.ThenChange()\n');
  await fs.writeFile(path.join(nestedRoot, 'source.go'), '// LINT.IfChange(API)\nvar api = 1\n// LINT.ThenChange( \\\n// target file.go:shared_label)\n');
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'iflint').length, 0);
+ assert.equal(vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt').length, 0);
  // An unmatched URL must stay an error, even with a matching local alias.
  if (process.platform !== 'win32') {
   await fs.mkdir(path.join(nestedRoot, 'https:', 'example.invalid'), {recursive:true});
@@ -163,7 +173,7 @@ exports.run = async function () {
  }
  await fs.writeFile(path.join(nestedRoot, 'source.go'), '// LINT.IfChange(API)\nvar api = 2\n// LINT.ThenChange(https://example.invalid/target.go)\n');
  await vscode.commands.executeCommand('iftttLint.run');
- externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'iflint');
+ externalDiagnostics = vscode.languages.getDiagnostics(externalSource).filter(d => d.source === 'ifttt');
  assert.equal(externalDiagnostics.length, 1);
  assert.equal(externalDiagnostics[0].code, 'invalid_target_path');
  externalActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', externalSource, externalDiagnostics[0].range);
@@ -207,7 +217,7 @@ exports.run = async function () {
  await vscode.commands.executeCommand('iftttLint.run');
  const snapshotUri = vscode.Uri.file(path.join(sourceRepo,'source.go'));
  await vscode.workspace.openTextDocument(snapshotUri);
- const snapshotDiagnostics = vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'iflint');
+ const snapshotDiagnostics = vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'ifttt');
  assert.equal(snapshotDiagnostics.length,2,'source-only immutable snapshots must require both target changes despite dirty checkouts');
  assert.ok(snapshotDiagnostics.every(d => d.code === 'then_label_missing'));
  const secondaryConfiguration = vscode.workspace.getConfiguration('iftttLint',secondaryUri);
@@ -215,7 +225,7 @@ exports.run = async function () {
  await fs.writeFile(path.join(secondary,'.ifttt-lint.yaml'),'directives:\n  prefix: SENTRY\n');
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'iflint').length,2,'the same manifest run from a second folder must retain one shared report');
+ assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'ifttt').length,2,'the same manifest run from a second folder must retain one shared report');
 
  const snapshotActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider',snapshotUri,new vscode.Range(2,0,2,1000));
  assert.ok(snapshotActions.some(action => action.command?.command === 'iftttLint.openTarget'),'snapshot local targets must retain Open file');
@@ -234,15 +244,15 @@ exports.run = async function () {
  await fs.writeFile(manifestPath,manifest(sourcePaired,targetHead));
  await vscode.window.showTextDocument(secondaryDocument);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'iflint').length,0,'a clean shared-manifest run in the second folder must retire the first folder snapshot report');
+ assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'ifttt').length,0,'a clean shared-manifest run in the second folder must retire the first folder snapshot report');
  await vscode.window.showTextDocument(document);
  await vscode.commands.executeCommand('iftttLint.run');
- assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'iflint').length,0,'paired immutable snapshots must satisfy cross-repo dependencies despite dirty files');
- assert.ok(process.env.IFLINT_HOST_RESULT, 'host result marker must be configured');
- await fs.writeFile(process.env.IFLINT_HOST_RESULT, JSON.stringify({passed:true, assertions:'diagnostics, navigation, code lenses, fix, clear, multi-root, exact label, inactive-document save with folder settings, LINT scaffold quick action, ambiguous labels, spaced continued targets, unmatched URL aliases, immutable cross-repo Git snapshots, metadata, read-only commands'}));
+ assert.equal(vscode.languages.getDiagnostics(snapshotUri).filter(d => d.source === 'ifttt').length,0,'paired immutable snapshots must satisfy cross-repo dependencies despite dirty files');
+ assert.ok(process.env.IFTTT_HOST_RESULT, 'host result marker must be configured');
+ await fs.writeFile(process.env.IFTTT_HOST_RESULT, JSON.stringify({passed:true, assertions:'diagnostics, navigation, code lenses, fix, clear, multi-root, exact label, inactive-document save with folder settings, LINT scaffold quick action, ambiguous labels, spaced continued targets, unmatched URL aliases, immutable cross-repo Git snapshots, metadata, read-only commands'}));
  console.log('Actual VS Code extension host workflow passed');
  } catch (error) {
-  if (process.env.IFLINT_HOST_RESULT) await fs.writeFile(process.env.IFLINT_HOST_RESULT, JSON.stringify({passed:false,error:error.stack || String(error)}));
+  if (process.env.IFTTT_HOST_RESULT) await fs.writeFile(process.env.IFTTT_HOST_RESULT, JSON.stringify({passed:false,error:error.stack || String(error)}));
   throw error;
  }
 };

@@ -144,7 +144,7 @@ func TestGoogleSingleSlashTargetIsProjectRootRelative(t *testing.T) {
 		t.Run(tc.prefix+tc.raw, func(t *testing.T) {
 			core.SetDirectivePrefix(tc.prefix)
 			actual := resolveTarget("nested/source.go", tc.raw)
-			if actual.Path != filepath.FromSlash(tc.want) || actual.Label != "API" {
+			if actual.Path != filepath.ToSlash(tc.want) || actual.Label != "API" {
 				t.Fatalf("resolved %q as %+v, want %q#API", tc.raw, actual, tc.want)
 			}
 		})
@@ -173,7 +173,7 @@ func TestGooglePermissiveDirectoryPathsAndExplicitRelativePaths(t *testing.T) {
 		t.Run(tc.prefix+tc.raw, func(t *testing.T) {
 			core.SetDirectivePrefix(tc.prefix)
 			actual := resolveTarget("nested/source.go", tc.raw)
-			if actual.Path != filepath.FromSlash(tc.want) || actual.Label != "API" {
+			if actual.Path != filepath.ToSlash(tc.want) || actual.Label != "API" {
 				t.Fatalf("resolved %q as %+v, want %q#API", tc.raw, actual, tc.want)
 			}
 		})
@@ -217,7 +217,7 @@ func TestGoogleDriveAbsoluteTargetsRejectedOnEveryHost(t *testing.T) {
 	core.SetDirectivePrefix("LINT")
 	for _, raw := range []string{`C:\outside.go`, `C:/outside.go`} {
 		t.Run(raw, func(t *testing.T) {
-			if got := resolveTarget("nested/source.go", raw).Path; got != filepath.Clean(raw) {
+			if got := resolveTarget("nested/source.go", raw).Path; got != filepath.ToSlash(filepath.Clean(raw)) {
 				t.Fatalf("drive absolute path converted to local path: %q", got)
 			}
 			files := map[string]string{"source.go": "// LINT.IfChange(API)\nbody\n// LINT.ThenChange(" + raw + ")\n"}

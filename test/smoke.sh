@@ -2,17 +2,17 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
-BIN="$ROOT/test/.iflint-smoke"
+BIN="$ROOT/test/.ifttt-smoke"
 TMP_REPO="$(mktemp -d)"
 trap 'rm -rf "$TMP_REPO" "$BIN"' EXIT
 
-echo "[1/8] building iflint binary..."
-(cd "$ROOT" && GO111MODULE=on go build -o "$BIN" ./cmd)
+echo "[1/8] building ifttt binary..."
+(cd "$ROOT" && GO111MODULE=on go build -o "$BIN" ./cmd/ifttt)
 
 echo "[2/8] setting up temporary repository at $TMP_REPO"
 cd "$TMP_REPO"
 git init -q
-git config user.name "IFLint Smoke Test"
+git config user.name "IFTTT Lint Smoke Test"
 git config user.email "smoke@example.invalid"
 cat <<'EOF' > .ifttt-lint.yaml
 parallelism: "auto"
@@ -66,7 +66,7 @@ if git diff --cached | "$BIN" -fix -; then
 	echo "ERROR: expected non-zero exit when running --fix" >&2
 	exit 1
 fi
-if ! grep -q "TODO(iflint)" target.go; then
+if ! grep -q "TODO(ifttt)" target.go; then
 	echo "ERROR: --fix did not insert placeholder in target.go" >&2
 	exit 1
 fi

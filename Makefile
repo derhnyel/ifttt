@@ -13,8 +13,8 @@ extension:
 	cd vscode-extension && npm ci && npm run lint && npm test && npm audit
 build:
 	mkdir -p build
-	@test -f build/go.mod || printf 'module iflint.local/build\n' > build/go.mod
-	CGO_ENABLED=0 go build -trimpath -o build/iflint ./cmd
+	@test -f build/go.mod || printf 'module ifttt.local/build\n' > build/go.mod
+	CGO_ENABLED=0 go build -trimpath -o build/ifttt ./cmd/ifttt
 release-build:
 	bash scripts/build-release.sh
 release-verify:
@@ -32,7 +32,7 @@ coverage:
 	rm -rf build/coverage/integration
 	mkdir -p build/coverage/integration
 	go test -count=1 -covermode=atomic -coverpkg=./... -coverprofile=build/coverage/unit.out ./...
-	IFLINT_INTEGRATION_COVER_DIR="$(CURDIR)/build/coverage/integration" go test -count=1 ./test/integration
+	IFTTT_INTEGRATION_COVER_DIR="$(CURDIR)/build/coverage/integration" go test -count=1 ./test/integration
 	go tool covdata textfmt -i=build/coverage/integration -o=build/coverage/integration.out
 	awk 'BEGIN { print "mode: atomic" } FNR == 1 { next } { key = $$1 " " $$2; counts[key] += $$3 } END { for (key in counts) print key, counts[key] }' build/coverage/unit.out build/coverage/integration.out > build/coverage/combined.out
 	go tool cover -func=build/coverage/combined.out
@@ -44,15 +44,15 @@ benchmark-test:
 # Download verification and compilation run before any executable timing.
 benchmark-repositories: build
 	python3 scripts/benchmark_upstream.py --output build/upstream/ifttt-lint
-	python3 scripts/benchmark_repositories.py --go build/iflint --upstream build/upstream/ifttt-lint --repos build/benchmark-repos
+	python3 scripts/benchmark_repositories.py --go build/ifttt --upstream build/upstream/ifttt-lint --repos build/benchmark-repos
 
 # Independent committed Git snapshots; validate every report before timing.
 benchmark-changeset: build
-	python3 scripts/benchmark_changeset.py --go build/iflint --output build/benchmarks/cross-repository.json
+	python3 scripts/benchmark_changeset.py --go build/ifttt --output build/benchmarks/cross-repository.json
 
 test-tools:
 	python3 test/install-jj.py
 
 extension-host:
 	python3 vscode-extension/test/run-host.py
-	IFLINT_HOST_VCS=jj python3 vscode-extension/test/run-host.py
+	IFTTT_HOST_VCS=jj python3 vscode-extension/test/run-host.py

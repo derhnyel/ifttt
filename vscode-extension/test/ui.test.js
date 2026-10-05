@@ -105,7 +105,7 @@ test('an owner changing report roots retires its previous findings while other o
 });
 
 test('physical report paths use the logical nested workspace alias for editor URIs',t=>{
- const fs=require('node:fs');const os=require('node:os');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'iflint alias '));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const fs=require('node:fs');const os=require('node:os');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ifttt alias '));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
  const physical=path.join(fs.realpathSync(dir),'repo');fs.mkdirSync(path.join(physical,'nested'),{recursive:true});const alias=path.join(dir,'alias');fs.symlinkSync(physical,alias,'dir');
  const owner={fsPath:path.join(alias,'nested')};const aggregator=new DiagnosticAggregator();aggregator.publish([activeFinding()],physical,owner);
  assert.equal(aggregator.getFindings()[0].file,path.join(alias,'source.go'));assert.equal(aggregator.getFindings()[0].targetPath,path.join(alias,'target.go'));assert.equal(aggregator.getFindings()[0].ownerUri,owner);assert.ok(entries.has(path.join(alias,'source.go')));aggregator.dispose();
