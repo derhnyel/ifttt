@@ -16,8 +16,8 @@ test('untrusted workspace does not execute configured commands',async () => {
 });
 
 test('configured command is resolved from PATH before downloading',async () => {
- const dir = fs.mkdtempSync(path.join(os.tmpdir(),'iflint-path-'));
- const name = process.platform === 'win32' ? 'custom-iflint.cmd' : 'custom-iflint';
+ const dir = fs.mkdtempSync(path.join(os.tmpdir(),'ifttt-path-'));
+ const name = process.platform === 'win32' ? 'custom-ifttt.cmd' : 'custom-ifttt';
  const binary = path.join(dir,name);
  fs.writeFileSync(binary,'#!/bin/sh\nexit 0\n',{mode:0o755});
  const previous = process.env.PATH;
@@ -35,7 +35,7 @@ function trustedWorkspace(dir, binary, extra = {}) {
 }
 function tempWorkspace(t) {
  const cp = require('node:child_process');
- const dir = fs.mkdtempSync(path.join(os.tmpdir(),'iflint runner ü '));
+ const dir = fs.mkdtempSync(path.join(os.tmpdir(),'ifttt runner ü '));
  t.after(() => fs.rmSync(dir,{recursive:true,force:true}));
  const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
  Object.assign(gitEnv,{GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:path.join(dir,'nonexistent-global-config')});
@@ -84,15 +84,15 @@ test('runner propagates diff command failure',async t => {
 });
 
 test('extension runs the real CLI and fixes an apostrophe target path', {timeout:120000},async t => {
- const cp=require('node:child_process');const dir=tempWorkspace(t);const buildDir=fs.mkdtempSync(path.join(os.tmpdir(),'iflint cli '));t.after(()=>fs.rmSync(buildDir,{recursive:true,force:true}));
- const binary=path.join(buildDir,process.platform==='win32'?'iflint.exe':'iflint');cp.execFileSync('go',['build','-o',binary,'./cmd'],{cwd:path.resolve(__dirname,'../..'),timeout:90000});
+ const cp=require('node:child_process');const dir=tempWorkspace(t);const buildDir=fs.mkdtempSync(path.join(os.tmpdir(),'ifttt cli '));t.after(()=>fs.rmSync(buildDir,{recursive:true,force:true}));
+ const binary=path.join(buildDir,process.platform==='win32'?'ifttt.exe':'ifttt');cp.execFileSync('go',['build','-o',binary,'./cmd/ifttt'],{cwd:path.resolve(__dirname,'../..'),timeout:90000});
  const target="owner's target.go";
  fs.writeFileSync(path.join(dir,'.ifttt-lint.yaml'),'directives:\n  prefix: SENTRY\n');
  const source=value=>`// SENTRY.IfChange("shared label")\nvar value = "${value}"\n// SENTRY.ThenChange("${target}#shared label")\n`;
  fs.writeFileSync(path.join(dir,'source.go'),source('old'));fs.writeFileSync(path.join(dir,target),'// SENTRY.Label("shared label")\nvar target = "old"\n// SENTRY.EndLabel\n');
  cp.execFileSync('git',['add','.'],{cwd:dir,timeout:10000});cp.execFileSync('git',['-c','core.hooksPath=','commit','-qm','contract baseline'],{cwd:dir,timeout:10000});fs.writeFileSync(path.join(dir,'source.go'),source('new'));
  trustedWorkspace(dir,binary);const lint=runner();const result=await lint.execute(false);assert.equal(result.ok,false);assert.equal(result.findings.length,1);assert.equal(result.findings[0].targetPath,target);assert.equal(result.findings[0].targetLabel,'shared label');
- await lint.execute(true);const fixed=fs.readFileSync(path.join(dir,target),'utf8');assert.match(fixed,/TODO\(iflint\)/);await lint.execute(true);assert.equal(fs.readFileSync(path.join(dir,target),'utf8'),fixed);assert.equal(fs.existsSync(path.join(dir,'owner')),false);
+ await lint.execute(true);const fixed=fs.readFileSync(path.join(dir,target),'utf8');assert.match(fixed,/TODO\(ifttt\)/);await lint.execute(true);assert.equal(fs.readFileSync(path.join(dir,target),'utf8'),fixed);assert.equal(fs.existsSync(path.join(dir,'owner')),false);
 });
 
 
@@ -128,9 +128,9 @@ test('operational errors retain previous diagnostics', async () => {
 let realBinary;
 function buildRealCLI(t) {
  if (!realBinary) {
-  const cp=require('node:child_process');const buildDir=fs.mkdtempSync(path.join(os.tmpdir(),'iflint native cli '));
-  realBinary=path.join(buildDir,process.platform==='win32'?'iflint.exe':'iflint');
-  cp.execFileSync('go',['build','-o',realBinary,'./cmd'],{cwd:path.resolve(__dirname,'../..'),timeout:90000});
+  const cp=require('node:child_process');const buildDir=fs.mkdtempSync(path.join(os.tmpdir(),'ifttt native cli '));
+  realBinary=path.join(buildDir,process.platform==='win32'?'ifttt.exe':'ifttt');
+  cp.execFileSync('go',['build','-o',realBinary,'./cmd/ifttt'],{cwd:path.resolve(__dirname,'../..'),timeout:90000});
   process.on('exit',()=>fs.rmSync(buildDir,{recursive:true,force:true}));
  }
  return realBinary;
@@ -152,7 +152,7 @@ test('default native extension finds unconfigured standard LINT Git violations a
  trustedWorkspace(dir,realBinary,{diffCommand:'',revision:'HEAD'});result=await runner().execute(false);assert.equal(result.ok,false);
 });
 
-const jjCommand=process.env.IFLINT_JJ_BINARY||'jj';
+const jjCommand=process.env.IFTTT_JJ_BINARY||'jj';
 const hasJJ=require('node:child_process').spawnSync(jjCommand,['--version']).status===0;
 test('default native extension finds unconfigured standard LINT with jj and accepts real revsets', {skip:!hasJJ,timeout:120000},async t => {
  const cp=require('node:child_process');const dir=tempWorkspace(t);contractFixture(dir);

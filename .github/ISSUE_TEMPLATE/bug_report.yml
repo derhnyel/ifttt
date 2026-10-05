@@ -16,7 +16,7 @@ body:
     id: environment
     attributes:
       label: Versions and environment
-      description: Include iflint --version, OS, Git/jj version, and VS Code/extension or Action version when relevant.
+      description: Include ifttt --version, OS, Git/jj version, and VS Code/extension or Action version when relevant.
     validations:
       required: true
   - type: textarea

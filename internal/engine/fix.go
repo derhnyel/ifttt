@@ -17,7 +17,7 @@ var (
 	rePathOnly        = regexp.MustCompile(`'([^'#]+)'`)
 	rePathWithLabel   = regexp.MustCompile(`'([^']+?)#([^']+)'`)
 	reLabelNotFound   = regexp.MustCompile(`label '([^']+)' not found in '([^']+)'`)
-	placeholderMarker = "// TODO(iflint): update per directive"
+	placeholderMarker = "// TODO(ifttt): update per directive"
 )
 
 func applyFixes(findings []core.Finding) (actions []string, errs []string) {
@@ -107,7 +107,7 @@ func ensureFilePlaceholder(path string) error {
 		text += "\n"
 	}
 	now := time.Now().Format(time.RFC3339)
-	block := fmt.Sprintf("%s\n%s\n", marker, fixCommentLine(path, "Added by iflint on "+now))
+	block := fmt.Sprintf("%s\n%s\n", marker, fixCommentLine(path, "Added by ifttt on "+now))
 	text += block
 	return writeFixFile(path, []byte(text), mode)
 }
@@ -297,7 +297,7 @@ func fixLabelNotFound(f core.Finding) (string, string, bool) {
 }
 
 func writeFixFile(path string, data []byte, mode os.FileMode) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".iflint-fix-*")
+	file, err := os.CreateTemp(filepath.Dir(path), ".ifttt-fix-*")
 	if err != nil {
 		return err
 	}

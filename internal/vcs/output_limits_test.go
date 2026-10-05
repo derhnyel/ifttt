@@ -11,7 +11,7 @@ import (
 // Exercise os/exec's real pipe copying: direct Writer.Write tests do not cover
 // optimized io.Copy paths such as a promoted bytes.Buffer.ReadFrom method.
 func TestVCSCommandOutputBounds(t *testing.T) {
-	if stream := os.Getenv("IFLINT_TEST_VCS_OUTPUT"); stream != "" {
+	if stream := os.Getenv("IFTTT_TEST_VCS_OUTPUT"); stream != "" {
 		file, size := os.Stdout, 33<<20
 		if stream == "stderr" {
 			file, size = os.Stderr, 2<<20
@@ -26,7 +26,7 @@ func TestVCSCommandOutputBounds(t *testing.T) {
 	}
 	for _, stream := range []string{"stdout", "stderr"} {
 		t.Run(stream, func(t *testing.T) {
-			t.Setenv("IFLINT_TEST_VCS_OUTPUT", stream)
+			t.Setenv("IFTTT_TEST_VCS_OUTPUT", stream)
 			backend := Backend{Kind: os.Args[0], Root: t.TempDir()}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

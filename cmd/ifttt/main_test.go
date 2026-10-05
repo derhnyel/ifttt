@@ -149,7 +149,7 @@ func TestRunJumpOutputsHintForMissingLabel(t *testing.T) {
 		t.Fatalf("write target: %v", err)
 	}
 	err := runJump([]string{target + "#MISSING"})
-	if err == nil || !strings.Contains(err.Error(), "iflint scaffold") {
+	if err == nil || !strings.Contains(err.Error(), "ifttt scaffold") {
 		t.Fatalf("expected scaffold hint, got %v", err)
 	}
 }

@@ -13,7 +13,7 @@ const {ensureBinaryPath} = require('../dist/lintRunner');
 Module._load = originalLoad;
 
 function downloadFixture(t, respond, prepare = () => {}) {
- const directory=fs.mkdtempSync(path.join(os.tmpdir(),'iflint download '));
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'ifttt download '));
  const previous={homedir:os.homedir,get:https.get,path:process.env.PATH};
  const requests=[];const responses=[];
  os.homedir=()=>directory;process.env.PATH='';

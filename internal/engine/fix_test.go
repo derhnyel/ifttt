@@ -99,7 +99,7 @@ func TestLabelPlaceholderInsideExistingRangeAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if strings.Count(text, "TODO(iflint)") != 1 || strings.Index(text, "TODO(iflint)") > strings.Index(text, "SENTRY.EndLabel") {
+	if strings.Count(text, "TODO(ifttt)") != 1 || strings.Index(text, "TODO(ifttt)") > strings.Index(text, "SENTRY.EndLabel") {
 		t.Fatalf("bad placeholder: %s", text)
 	}
 	info, err := os.Stat(path)

@@ -18,24 +18,24 @@ func TestVersionWithoutProject(t *testing.T) {
 			name = "malformed config"
 		}
 		t.Run(name, func(t *testing.T) {
-			assertVersion(t, binary, malformedConfig, "iflint dev (commit unknown)\n")
+			assertVersion(t, binary, malformedConfig, "ifttt dev (commit unknown)\n")
 		})
 	}
 }
 
 func TestVersionBuildMetadata(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "iflint")
+	path := filepath.Join(t.TempDir(), "ifttt")
 	if runtime.GOOS == "windows" {
 		path += ".exe"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags=-X main.version=v1.2.3 -X main.commit=abc1234", "-o", path, "./cmd")
+	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags=-X main.version=v1.2.3 -X main.commit=abc1234", "-o", path, "./cmd/ifttt")
 	cmd.Dir = "../.."
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI with release metadata: %v\n%s", err, output)
 	}
-	assertVersion(t, path, true, "iflint v1.2.3 (commit abc1234)\n")
+	assertVersion(t, path, true, "ifttt v1.2.3 (commit abc1234)\n")
 }
 
 func assertVersion(t *testing.T, path string, malformedConfig bool, want string) {
