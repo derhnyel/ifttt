@@ -110,7 +110,7 @@ func (f *snapshotFactory) changes(target string) (*core.FileChanges, error) {
 	if bound.err != nil {
 		return nil, bound.err
 	}
-	return bound.snapshot.changes[filepath.FromSlash(bound.path)], nil
+	return bound.snapshot.changes[bound.path], nil
 }
 func (f *snapshotFactory) lookup(target string) boundTarget {
 	f.mu.Lock()
