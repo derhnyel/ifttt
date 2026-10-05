@@ -162,6 +162,12 @@ func TestChangeSetConditionalConfigurationChangesValidateTargets(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/%s/source-changed=%v", rule, kind, sourceChanged), func(t *testing.T) {
 					a, b := newDefaultRepo(t), newDefaultRepo(t)
 					path := "target.go"
+					if kind == "policy" {
+						if err := os.Mkdir(filepath.Join(b.dir, ".vscode"), 0700); err != nil {
+							t.Fatal(err)
+						}
+						path = ".vscode/target.go"
+					}
 					targetText := "// LINT.IfChange(API)\none\n// LINT.ThenChange()\n"
 					config := "directives:\n  prefix: CUSTOM\n"
 					if kind == "python" {
@@ -588,6 +594,8 @@ func TestChangeSetMixedCommittedPrefixes(t *testing.T) {
 			// Dirty configs and files must not change committed evidence.
 			a.write(t, ".ifttt-lint.yaml", "directives: [\n")
 			b.write(t, ".ifttt-lint.yaml", "directives:\n  prefix: WRONG\n")
+			a.write(t, ".gitignore", "source.go\n")
+			b.write(t, ".gitignore", "target.go\n")
 			requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
 			requireCode(t, b, "", 0, "--change-set", manifest, "--format=json")
 		})
@@ -684,6 +692,48 @@ func TestChangeSetCommittedPolicyAndExplicitOverride(t *testing.T) {
 	aIgnored := changeSetCommit(t, a)
 	requireCode(t, a, "", 0, "--change-set", changeSetManifest(t, a, b, aBase, aIgnored, bBase, bHead), "--format=json")
 }
+
+// LINT.IfChange(snapshot_ignore_policy)
+func TestChangeSetIgnorePolicyUsesEachCommittedRepository(t *testing.T) {
+	for _, policy := range []string{"ignores: [skipped/**]\n", "skip_directories: [skipped]\n"} {
+		t.Run(strings.TrimSpace(policy), func(t *testing.T) {
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			for _, r := range []repo{a, b} {
+				for _, dir := range []string{"skipped", ".vscode", ".local"} {
+					if err := os.Mkdir(filepath.Join(r.dir, dir), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				r.write(t, ".gitignore", ".local/\n")
+				r.write(t, ".ifttt-lint.yaml", policy)
+				r.write(t, "skipped/source.go", "// LINT.IfChange(SKIP)\none\n// LINT.ThenChange()\n")
+				r.write(t, ".vscode/source.go", "// LINT.IfChange(EDITOR)\none\n// LINT.ThenChange()\n")
+			}
+			aBase, bBase := changeSetCommit(t, a), changeSetCommit(t, b)
+			for _, r := range []repo{a, b} {
+				r.write(t, "skipped/source.go", "// LINT.IfChange(BROKEN)\n")
+			}
+			aHead, bHead := changeSetCommit(t, a), changeSetCommit(t, b)
+			manifest := changeSetManifest(t, a, b, aBase, aHead, bBase, bHead)
+			for _, r := range []repo{a, b} {
+				r.write(t, ".ifttt-lint.yaml", "ignores: [.vscode/**]\n")
+				r.write(t, ".local/artifact.go", "// LINT.IfChange(BROKEN)\n")
+			}
+			requireCode(t, a, "", 0, "--change-set", manifest, "--format=json")
+			// A dirty or committed Git ignore rule cannot hide a tracked contract.
+			b.write(t, ".vscode/source.go", "// LINT.IfChange(BROKEN)\n")
+			b.write(t, ".ifttt-lint.yaml", policy)
+			b.write(t, ".gitignore", ".local/\n.vscode/\n")
+			bHead = changeSetCommit(t, b)
+			out := requireCode(t, a, "", 1, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bHead), "--format=json")
+			if !strings.Contains(out, "orphan_if") || !strings.Contains(out, "acme/target") || strings.Contains(out, "skipped/source.go") || strings.Contains(out, "artifact.go") {
+				t.Fatalf("snapshot ignore policy: %s", out)
+			}
+		})
+	}
+}
+
+// LINT.ThenChange(//internal/changeset/run.go:snapshot_ignore_policy, //README.md:snapshot_ignore_policy)
 
 func TestChangeSetRejectsCommittedInvalidConfiguration(t *testing.T) {
 	for _, body := range []string{"directives: [\n", "parallelism: invalid\n", "rules:\n  unknown_directive: typo\n"} {

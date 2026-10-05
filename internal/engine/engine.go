@@ -333,6 +333,8 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 	ign := compileIgnores(opts.Ignores)
 	// LINT.IfChange(target_exclusions)
 	ignored := func(tr core.TargetRef) bool {
+		// Shared defaults cover dependencies/caches; editor and build directories
+		// need explicit skip configuration to exclude a linked target.
 		if pathInSkippedDir(tr.Path, skipSet) {
 			return true
 		}
@@ -380,7 +382,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		if openErr == nil {
 			reverseCandidates, err = repository.DirectiveFilesWithBinary(context.Background(), syn.PrefixDot)
 		} else {
-			reverseCandidates, err = scan.FindDirectiveFiles(".", syn.PrefixDot, workerLimit(opts.Parallelism), skipDirs)
+			reverseCandidates, err = scan.FindDirectiveFiles(".", syn.PrefixDot, workerLimit(opts.Parallelism), skipDirs, opts.Ignores...)
 		}
 		if err != nil {
 			return Result{Findings: []core.Finding{errFinding(".", 1, err)}}, 1
@@ -810,6 +812,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 	// LINT.IfChange(conditional_target_structure)
 	for _, rule := range extraRules {
 		// Structural references remain valid even when edit checks are suppressed.
+		// Source exclusions apply through the shared ignored callback.
 		evaluateConditionalRule(rule, changes, labelRanges, files, opts.Factories, opts.CodeOnly, ignored, emit, dependencyChange, syn,
 			opts.SuppressCoChanges || (selected != nil && !selected[rule.src]))
 	}

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Respect Git ignore rules and configured exclusions during scan, doctor and fallback directive discovery. Limit default skips to VCS metadata and dependency/cache folders; editor directories and build outputs follow project ignore rules. Show discovery progress with `--verbose`.
+
 ## 0.2.0 — 2026-10-05
 
 - Load each change-set repository’s committed root config, including its directive prefix and Python comment settings. Cache verified snapshot commit IDs to avoid repeated Git/jj revision lookups.

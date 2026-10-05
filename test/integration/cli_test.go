@@ -649,6 +649,88 @@ func TestDoctorFixIsIdempotentAndPreservesCode(t *testing.T) {
 	}
 }
 
+// LINT.IfChange(scan_local_artifacts)
+func TestScanAndDoctorSkipLocalArtifactsButCheckUntrackedSources(t *testing.T) {
+	for _, mode := range [][]string{{"--scan", "."}, {"--doctor"}} {
+		t.Run(mode[0], func(t *testing.T) {
+			r := newDefaultRepo(t)
+			for _, name := range []string{".gocache", "node_modules"} {
+				if err := os.Mkdir(filepath.Join(r.dir, name), 0700); err != nil {
+					t.Fatal(err)
+				}
+				r.write(t, name+"/artifact.go", "// LINT.IfChange(artifact)\n")
+			}
+			args := append(append([]string{}, mode...), "--format=json", "--verbose")
+			requireCode(t, r, "", 0, args...)
+			r.write(t, "source.go", "// LINT.IfChange(source)\n")
+			out := requireCode(t, r, "", 1, args...)
+			var report struct {
+				Errors []struct {
+					File string `json:"file"`
+				} `json:"errors"`
+			}
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("decode findings: %v (%s)", err, out)
+			}
+			if len(report.Errors) != 1 || filepath.Base(report.Errors[0].File) != "source.go" {
+				t.Fatalf("must check untracked source and exclude artifacts: %s", out)
+			}
+			out = requireCode(t, r, "", 1, append(args, "--skip-dir", ".git")...)
+			if !strings.Contains(out, "artifact.go") {
+				t.Fatalf("explicit skip-dir must replace default exclusions: %s", out)
+			}
+		})
+	}
+}
+
+// LINT.ThenChange(//internal/scan/scan.go:scan_local_artifacts, //README.md:scan_local_artifacts)
+
+func TestScanAndDoctorRespectGitAndConfiguredExclusions(t *testing.T) {
+	for _, mode := range [][]string{{"--scan", "."}, {"--doctor"}} {
+		t.Run(mode[0], func(t *testing.T) {
+			r := newDefaultRepo(t)
+			r.write(t, ".gitignore", ".local/\n*.tmp\n!keep.tmp\n")
+			r.write(t, ".git/info/exclude", "excluded.go\n")
+			r.write(t, ".ifttt-lint.yaml", "ignores: [configured/**]\nskip_directories: [.git, skipped]\n")
+			for _, name := range []string{".local", "configured", "skipped", ".vscode", ".idea"} {
+				if err := os.Mkdir(filepath.Join(r.dir, name), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, name := range []string{".local/artifact.go", "configured/artifact.go", "skipped/artifact.go", "drop.tmp", "excluded.go"} {
+				r.write(t, name, "// LINT.IfChange(artifact)\n")
+			}
+			args := append(append([]string{}, mode...), "--format=json")
+			requireCode(t, r, "", 0, args...)
+			for _, name := range []string{"keep.tmp", ".vscode/source.go", ".idea/source.go"} {
+				r.write(t, name, "// LINT.IfChange(source)\n")
+			}
+			out := requireCode(t, r, "", 1, args...)
+			for _, name := range []string{"keep.tmp", ".vscode", ".idea"} {
+				if !strings.Contains(out, name) {
+					t.Fatalf("eligible file missed: %s", out)
+				}
+			}
+			if strings.Contains(out, "artifact.go") || strings.Contains(out, "excluded.go") || strings.Contains(out, "drop.tmp") {
+				t.Fatalf("ignored artifact included: %s", out)
+			}
+		})
+	}
+}
+
+func TestScanStillValidatesExplicitlyLinkedGitIgnoredTarget(t *testing.T) {
+	r := newDefaultRepo(t)
+	r.write(t, ".gitignore", "target.go\n")
+	r.write(t, "source.go", "// LINT.IfChange(API)\none\n// LINT.ThenChange(//target.go:API)\n")
+	r.write(t, "target.go", "// LINT.IfChange(API)\none\n// LINT.ThenChange()\n")
+	requireCode(t, r, "", 0, "--scan", ".", "--format=json")
+	r.write(t, "target.go", "// LINT.IfChange(renamed)\none\n// LINT.ThenChange()\n")
+	out := requireCode(t, r, "", 1, "--scan", ".", "--format=json")
+	if !strings.Contains(out, "label_missing") {
+		t.Fatalf("Git ignore hid broken explicit dependency: %s", out)
+	}
+}
+
 func TestScanValidatesStructureAndTargets(t *testing.T) {
 	r := fixture(t)
 	out := requireCode(t, r, "", 0, "--scan", ".", "--format=json")
