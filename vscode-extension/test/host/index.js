@@ -61,9 +61,19 @@ exports.run = async function () {
  assert.equal(secondaryDiagnostics.length, 1, 'saving the inactive document must use its folder runOnSave setting and native repository');
  assert.equal(secondaryDiagnostics[0].code, 'then_label_missing');
  await vscode.window.showTextDocument(document);
- const secondaryActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', secondaryUri, secondaryDiagnostics[0].range);
- const secondaryFix = secondaryActions.find(action => action.command?.command === 'iftttLint.applyFix');
- assert.ok(secondaryFix, 'label co-change must offer the supported placeholder fix');
+ // Save-triggered diagnostics reach the extension host before VS Code's
+ // code-action service necessarily receives them. Wait for the actual action,
+ // rather than treating the first empty provider result as a product failure.
+ const actionDeadline = Date.now() + 20000;
+ let secondaryFix;
+ let secondaryActions;
+ do {
+  secondaryActions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', secondaryUri, secondaryDiagnostics[0].range);
+  secondaryFix = secondaryActions.find(action => action.command?.command === 'iftttLint.applyFix');
+  if (secondaryFix) break;
+  await new Promise(resolve => setTimeout(resolve, 100));
+ } while (Date.now() < actionDeadline);
+ assert.ok(secondaryFix, `label co-change must offer the supported placeholder fix; received ${JSON.stringify(secondaryActions)}`);
  await vscode.commands.executeCommand(secondaryFix.command.command, ...(secondaryFix.command.arguments ?? []));
  assert.match(await fs.readFile(path.join(secondary, 'target.go'), 'utf8'), /TODO\(ifttt\)/, 'inactive quick fix must modify its finding folder');
  assert.equal(await fs.readFile(path.join(root, 'target.go'), 'utf8'), target, 'inactive quick fix must preserve the active folder target');
