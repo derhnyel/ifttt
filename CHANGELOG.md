@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-10-05
 
 - Name the CLI `ifttt` and the VS Code extension `IFTTT Lint`. Go installs use `github.com/derhnyel/ifttt/cmd/ifttt`.
 - Use `IFTTT_*` environment variables, `ifttt` hook IDs and `ifttt-<os>-<arch>` release binaries.

@@ -1,4 +1,4 @@
-name: ifttt
+name: ifttt-lint-go
 description: Check cross-file directives in a unified diff or scan a workspace.
 inputs:
   change-set:
