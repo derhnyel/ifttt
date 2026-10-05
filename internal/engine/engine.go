@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -925,6 +926,7 @@ func compileIgnores(list []string, baseDir ...string) []core.IgnorePattern {
 	return out
 }
 
+// LINT.IfChange(remote_revision_refs)
 // Directives are memoized within each lint invocation. Reading current content
 // avoids stale stat-only cache hits and unbounded background cache state in watch.
 func loadDirectives(provider FileProvider, actualPath string, syntax ...core.DirectiveSyntax) ([]core.LintDirective, error) {
@@ -936,8 +938,19 @@ func loadDirectives(provider FileProvider, actualPath string, syntax ...core.Dir
 		}
 		return data, nil
 	}}
-	return pf.Parse(actualPath)
+	parsePath := actualPath
+	if isRemotePath(actualPath) {
+		remote, err := url.Parse(actualPath)
+		if err != nil {
+			return nil, err
+		}
+		// Select comments by the file path, preserving the ref for provider reads.
+		parsePath = remote.Path
+	}
+	return pf.Parse(parsePath)
 }
+
+// LINT.ThenChange(//test/integration/remote_revisions_test.go:remote_revision_refs, //README.md:remote_revision_refs)
 
 func fileContainsDirective(files FileProvider, factories []FileProviderFactory, path string, syntax ...core.DirectiveSyntax) bool {
 	syn := syntaxOrDefault(syntax...)

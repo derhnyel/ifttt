@@ -164,4 +164,4 @@ func evaluateMatch(rule matchRule, opts Options, files FileProvider, getDirs fun
 	}
 }
 
-// LINT.ThenChange(//internal/parse/match.go:match_contract, //test/integration/match_test.go:match_contract, //README.md:match_contract)
+// LINT.ThenChange(//internal/parse/match.go:match_contract, //test/integration/match_test.go:match_contract, //docs/directives.md:match_contract)

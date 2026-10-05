@@ -18,7 +18,7 @@ import (
 // DefaultSkippedDirs excludes VCS metadata and dependency/cache directories.
 var DefaultSkippedDirs = []string{".git", ".jj", ".hg", ".svn", "node_modules", "vendor", ".cache", ".gocache", ".venv", "__pycache__"}
 
-// LINT.ThenChange(//internal/scan/scan_test.go:scan_local_artifacts, //test/integration/cli_test.go:scan_local_artifacts, //README.md:scan_local_artifacts)
+// LINT.ThenChange(//internal/scan/scan_test.go:scan_local_artifacts, //test/integration/cli_test.go:scan_local_artifacts, //docs/cli.md:scan_local_artifacts)
 
 // FindDirectiveFiles walks root and returns files containing the given needle (e.g. "LINT.").
 // It processes files concurrently using workers; concurrency<=0 uses two workers.
