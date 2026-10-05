@@ -41,6 +41,7 @@ type Options struct {
 	Parallelism             int
 	Verbose                 bool
 	Ignores                 []string // file or file#label
+	IgnoreBaseDir           string   // optional configuration coordinate root
 	CodeOnly                bool
 	UnknownPolicy           string // error|warn|ignore
 	SkipDirs                []string
@@ -330,7 +331,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 	skipSet := makeSkipSet(skipDirs)
 
 	// prepare ignores (compiled)
-	ign := compileIgnores(opts.Ignores)
+	ign := compileIgnores(opts.Ignores, opts.IgnoreBaseDir)
 	// LINT.IfChange(target_exclusions)
 	ignored := func(tr core.TargetRef) bool {
 		// Shared defaults cover dependencies/caches; editor and build directories
@@ -338,13 +339,11 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 		if pathInSkippedDir(tr.Path, skipSet) {
 			return true
 		}
-		name := tr.Path
-		base := filepath.Base(name)
 		for _, p := range ign {
 			if p.Label != "" && tr.Label != p.Label {
 				continue
 			}
-			if p.Rx.MatchString(name) || p.Rx.MatchString(base) {
+			if p.Matches(tr.Path) {
 				return true
 			}
 		}
@@ -812,7 +811,7 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 	// LINT.IfChange(conditional_target_structure)
 	for _, rule := range extraRules {
 		// Structural references remain valid even when edit checks are suppressed.
-		// Source exclusions apply through the shared ignored callback.
+		// The shared callback preserves configuration coordinates for exclusions.
 		evaluateConditionalRule(rule, changes, labelRanges, files, opts.Factories, opts.CodeOnly, ignored, emit, dependencyChange, syn,
 			opts.SuppressCoChanges || (selected != nil && !selected[rule.src]))
 	}
@@ -910,14 +909,18 @@ func LintReader(r io.Reader, opts Options) (Result, int) {
 
 // ——— helpers ———
 
-func compileIgnores(list []string) []core.IgnorePattern {
+func compileIgnores(list []string, baseDir ...string) []core.IgnorePattern {
 	var out []core.IgnorePattern
+	root := ""
+	if len(baseDir) > 0 {
+		root = baseDir[0]
+	}
 	for _, raw := range list {
 		name, label := raw, ""
 		if i := strings.IndexByte(raw, '#'); i >= 0 {
 			name, label = raw[:i], raw[i+1:]
 		}
-		out = append(out, core.IgnorePattern{TargetName: name, Label: label, Rx: core.CompileGlob(name)})
+		out = append(out, core.IgnorePattern{TargetName: name, Label: label, Rx: core.CompileGlob(name), BaseDir: root})
 	}
 	return out
 }
@@ -999,12 +1002,11 @@ func isRemotePath(path string) bool {
 }
 
 func matchAnyFile(path string, pats []core.IgnorePattern) bool {
-	base := filepath.Base(path)
 	for _, p := range pats {
 		if p.Label != "" {
 			continue
 		}
-		if p.Rx.MatchString(path) || p.Rx.MatchString(base) {
+		if p.Matches(path) {
 			return true
 		}
 	}

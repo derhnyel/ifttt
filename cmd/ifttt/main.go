@@ -342,7 +342,7 @@ func main() {
 		if root == "" {
 			root = "."
 		}
-		findings, err := runDoctor(root, cfg.SkipDirs, *fix, cfg.Ignores...)
+		findings, err := runDoctor(root, cfg.SkipDirs, *fix, discoveryExclusions(cfg, len(ignore) > 0))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ifttt doctor:", err)
 			os.Exit(2)
@@ -359,12 +359,14 @@ func main() {
 	}
 
 	if *scan != "" {
-		files, err := scanForLint(*scan, cfg.SkipDirs, cfg.Ignores...)
+		policy := discoveryExclusions(cfg, len(ignore) > 0)
+		files, err := scanForLint(*scan, cfg.SkipDirs, policy)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ifttt:", err)
 			os.Exit(2)
 		}
 		opts := optionsFromConfig(cfg, factories)
+		opts.IgnoreBaseDir = policy.BaseDir
 		if *parallel != -1 {
 			opts.Parallelism = *parallel
 		}
@@ -633,9 +635,26 @@ func writerForFormat(format string) core.ResultWriter {
 	}
 }
 
-func scanForLint(root string, skip []string, excludes ...string) ([]string, error) {
+// LINT.IfChange(readme_configuration)
+// Keep wildcard patterns unchanged. Discovery and validation match paths
+// relative to their config root, or cwd for explicit --ignore overrides.
+func discoveryExclusions(cfg config.Config, overridden bool) scan.Exclusions {
+	policy := scan.Exclusions{Patterns: cfg.Ignores}
+	if !overridden {
+		policy.BaseDir = cfg.BaseDir
+	}
+	return policy
+}
+
+// LINT.ThenChange(//README.md:readme_configuration, //test/integration/readme_examples_test.go:readme_configuration)
+
+func scanForLint(root string, skip []string, policies ...scan.Exclusions) ([]string, error) {
 	syn := core.CurrentDirectiveSyntax()
-	files, err := scan.FindDirectiveFiles(root, syn.PrefixDot, -1, skip, excludes...)
+	var policy scan.Exclusions
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
+	files, err := scan.FindWithExclusions(root, syn.PrefixDot, -1, skip, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -1224,14 +1243,18 @@ func deriveLabel(path string) string {
 	return label
 }
 
-func runDoctor(root string, skip []string, fix bool, excludes ...string) ([]core.Finding, error) {
+func runDoctor(root string, skip []string, fix bool, policies ...scan.Exclusions) ([]core.Finding, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
 	root = absRoot
 	syn := core.CurrentDirectiveSyntax()
-	files, err := scan.FindDirectiveFiles(root, syn.PrefixDot, -1, skip, excludes...)
+	var policy scan.Exclusions
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
+	files, err := scan.FindWithExclusions(root, syn.PrefixDot, -1, skip, policy)
 	if err != nil {
 		return nil, err
 	}

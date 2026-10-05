@@ -23,7 +23,18 @@ var DefaultSkippedDirs = []string{".git", ".jj", ".hg", ".svn", "node_modules", 
 // FindDirectiveFiles walks root and returns files containing the given needle (e.g. "LINT.").
 // It processes files concurrently using workers; concurrency<=0 uses two workers.
 // Discovery includes hidden files, respects Git ignores and excludes symlinks.
-func FindDirectiveFiles(root, needle string, concurrency int, skipDirs []string, excludes ...string) (files []string, err error) {
+func FindDirectiveFiles(root, needle string, concurrency int, skipDirs []string, excludes ...string) ([]string, error) {
+	return FindWithExclusions(root, needle, concurrency, skipDirs, Exclusions{Patterns: excludes})
+}
+
+// Exclusions keeps patterns in their configuration directory's coordinates.
+// BaseDir defaults to the process directory for explicit CLI policies.
+type Exclusions struct {
+	BaseDir  string
+	Patterns []string
+}
+
+func FindWithExclusions(root, needle string, concurrency int, skipDirs []string, excludes Exclusions) (files []string, err error) {
 	if needle == "" {
 		return nil, nil
 	}
@@ -51,11 +62,11 @@ func FindDirectiveFiles(root, needle string, concurrency int, skipDirs []string,
 		skipSet[filepath.Base(filepath.Clean(name))] = struct{}{}
 	}
 
-	if files, ok, gitErr := tryGit(root, needle, concurrency, skipSet, excludes...); ok {
+	if files, ok, gitErr := tryGit(root, needle, concurrency, skipSet, excludes); ok {
 		sort.Strings(files)
 		return files, gitErr
 	}
-	if files, ok := tryRipgrep(root, needle, skipSet, excludes...); ok {
+	if files, ok := tryRipgrep(root, needle, skipSet, excludes.Patterns...); ok {
 		// Ensure sorting to keep deterministic output
 		sort.Strings(files)
 		return files, nil
@@ -64,7 +75,7 @@ func FindDirectiveFiles(root, needle string, concurrency int, skipDirs []string,
 	if err != nil {
 		return nil, err
 	}
-	excluded := fileExclusions(excludes)
+	excluded := fileExclusionsAt(excludes.BaseDir, excludes.Patterns)
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -234,7 +245,7 @@ func tryRipgrep(root, needle string, skipSet map[string]struct{}, excludes ...st
 
 // Git applies its index and standard excludes before opening files.
 // Tracked files remain eligible even when a later ignore rule matches them.
-func tryGit(root, needle string, concurrency int, skipSet map[string]struct{}, excludes ...string) ([]string, bool, error) {
+func tryGit(root, needle string, concurrency int, skipSet map[string]struct{}, excludes Exclusions) ([]string, bool, error) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, false, nil
 	}
@@ -245,7 +256,7 @@ func tryGit(root, needle string, concurrency int, skipSet map[string]struct{}, e
 	// Configured globs use the CLI grammar. Filter Git's eligible path list in Go,
 	// rather than translating them into Git's different pathspec grammar.
 	var source []string
-	for _, pattern := range excludes {
+	for _, pattern := range excludes.Patterns {
 		if !strings.Contains(pattern, "#") && !strings.Contains(pattern, "://") {
 			source = append(source, pattern)
 		}
@@ -255,7 +266,7 @@ func tryGit(root, needle string, concurrency int, skipSet map[string]struct{}, e
 		if err != nil {
 			return nil, true, err
 		}
-		return searchPaths(root, needle, nulPaths(out), concurrency, skipSet, fileExclusions(source)), true, nil
+		return searchPaths(root, needle, nulPaths(out), concurrency, skipSet, fileExclusionsAt(excludes.BaseDir, source)), true, nil
 	}
 	args := []string{"-C", root, "-c", "grep.fullName=false", "grep", "--threads=" + strconv.Itoa(concurrency), "--text", "-l", "-z", "--fixed-strings", "-e", needle, "--", "."}
 	for dir := range skipSet {

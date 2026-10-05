@@ -2,6 +2,7 @@ package ifttt
 
 import (
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -53,6 +54,24 @@ type IgnorePattern struct {
 	TargetName string
 	Label      string
 	Rx         *regexp.Regexp
+	BaseDir    string
+}
+
+// Matches keeps glob syntax unchanged and moves filesystem candidates into
+// the configuration's coordinates. Empty BaseDir preserves repository paths.
+func (p IgnorePattern) Matches(candidate string) bool {
+	if p.BaseDir != "" && !strings.Contains(candidate, "://") {
+		absolute, err := filepath.Abs(candidate)
+		if err != nil {
+			return false
+		}
+		rel, err := filepath.Rel(p.BaseDir, absolute)
+		if err != nil {
+			return false
+		}
+		candidate = filepath.ToSlash(rel)
+	}
+	return p.Rx.MatchString(candidate) || p.Rx.MatchString(filepath.Base(candidate))
 }
 
 // CompileGlob compiles a shell-like glob to regex

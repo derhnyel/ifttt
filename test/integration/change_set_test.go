@@ -199,6 +199,10 @@ func TestChangeSetConditionalConfigurationChangesValidateTargets(t *testing.T) {
 						wantCode = 1
 					}
 					output := requireCode(t, a, "", wantCode, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bHead), "--format=json")
+					if kind == "policy" {
+						// Snapshot exclusions keep repository coordinates from either checkout.
+						requireCode(t, b, "", wantCode, "--change-set", changeSetManifest(t, a, b, aBase, aHead, bBase, bHead), "--format=json")
+					}
 					var report struct {
 						Errors []struct{ Repository, RuleID, TargetPath, TargetLabel string }
 					}

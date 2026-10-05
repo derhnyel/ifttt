@@ -116,20 +116,26 @@ func loadIgnorePolicy(root string) (*ignorePolicy, error) {
 }
 
 func fileExclusions(excludes []string) func(string, bool) bool {
+	return fileExclusionsAt("", excludes)
+}
+
+func fileExclusionsAt(baseDir string, excludes []string) func(string, bool) bool {
 	type exclusion struct {
 		rx      *regexp.Regexp
 		subtree bool
 	}
 	var patterns []exclusion
-	cwd, _ := os.Getwd()
+	if baseDir == "" {
+		baseDir, _ = os.Getwd()
+	}
 	for _, raw := range excludes {
 		if !strings.Contains(raw, "#") && !strings.Contains(raw, "://") {
 			patterns = append(patterns, exclusion{core.CompileGlob(raw), strings.HasSuffix(raw, "/**")})
 		}
 	}
 	return func(path string, isDir bool) bool {
-		if filepath.IsAbs(path) {
-			if rel, err := filepath.Rel(cwd, path); err == nil {
+		if absolute, err := filepath.Abs(path); err == nil {
+			if rel, err := filepath.Rel(baseDir, absolute); err == nil {
 				path = rel
 			}
 		}
