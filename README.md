@@ -1,13 +1,18 @@
 # IFTTT Lint
 
-When you change code, related tests or docs may need changes too. IFTTT Lint reports the linked updates you missed.
+IFTTT Lint catches incomplete changes.
 
-Use `LINT.IfChange` and `LINT.ThenChange` comments to link sections. Check your changes with the CLI, VS Code or CI. Use Git or jj.
+A change is often larger than the file you edit.
+Record what else needs an update beside the relevant section. IFTTT Lint checks your diff and points to any required edits you missed.
+
+Wrap a section with `LINT.IfChange` and `LINT.ThenChange` to name the files or sections that need an edit when it changes.
+Run the check on your Git or jj changes, in VS Code or in CI.
 
 The tool checks for required edits. Tests and review must check whether the edits work.
 
 - [When to use it](#when-to-use-it)
 - [Quick start](#quick-start)
+- [Resolve a finding](#resolve-a-finding)
 - [VS Code extension](#vs-code-extension)
 - [CLI](#cli)
 - [Directives and examples](docs/directives.md)
@@ -30,12 +35,14 @@ Link sections that must change together. Keep each section small.
 | Schemas and clients | Require a client edit when a linked schema field changes. |
 | Rules and tests | Require a test edit when a linked rule changes. |
 | Defaults and examples | Require an example edit when a linked default changes. |
-| Separate implementations | Require edits to linked implementations of the same protocol rule. |
+| Across languages | Require edits to linked Go and TypeScript implementations of the same protocol rule. |
 | AI agent edits | Show agents which linked tests or docs need edits. |
 | Multiple repositories | Check linked edits in committed snapshots with `--change-set`. |
 | Repeated content | Keep labelled text or selected values equal with [LINT.Match](docs/directives.md#match-section-contents). |
 
 Prefer shared code or generated files when they can remove duplication.
+Use these links when shared code cannot connect the files, such as source code and prose docs.
+See [supported languages and comment styles](docs/cli.md#supported-files).
 
 ## Quick start
 
@@ -66,6 +73,20 @@ Put `build/ifttt` on PATH to use it elsewhere. Git or jj must also be on PATH. S
 
 Automatic detection chooses jj when both Git and jj exist. Use `--vcs git` for Git revision ranges.
 
+## Resolve a finding
+
+A finding points to the source change and the linked target that needs attention.
+
+1. Open the target from the report or the VS Code finding.
+2. Make the required update. For a labelled target, edit inside that section.
+3. Run the same check again, then run the tests for your changes.
+
+For a cross-repository change set, commit the updates and select the new head commits before checking again.
+Saving files alone does not change a snapshot check.
+
+`--fix` can insert placeholders. It cannot write the required implementation or documentation for you.
+See [finding explanations and fixes](docs/cli.md#fix-behavior).
+
 ## VS Code extension
 
 See findings in Problems. Open linked files, read directive help and check changes on save.
@@ -83,6 +104,7 @@ ifttt --scan .                    # directive structure
 ```
 
 See [all commands, options, ignore rules and fixes](docs/cli.md).
+See [when checks run](docs/directives.md#how-changes-trigger-checks) for body edits, new blocks, directive-only edits and unchanged sources.
 See [directive syntax and tested examples](docs/directives.md) for nested blocks, conditional links, matching values and suppression.
 
 ### Configuration
@@ -125,11 +147,16 @@ See [local pre-commit and pre-push hooks](docs/cli.md#hooks) for checks before c
 Follow [AGENTS.md](AGENTS.md) to add narrow dependency links, check changes and make the required updates.
 The required `Lint` job checks directive structure and matching edits across pull requests and merge queues.
 
+We use these directives in this repository too.
+For example, the [scanner](internal/scan/scan.go) links changes to its tests and documented ignore policy.
+The [Lint workflow](.github/workflows/lint.yml) builds and runs our CLI to check those links.
+
 ## Cross-repository change sets
 
 Link a section in another repository with `github://owner/repo/path#label`.
 Use `--change-set .ifttt-changes.yaml` to check linked edits in local Git/jj checkouts.
 The manifest selects each repository's `base` and `head`. Dirty files cannot satisfy a dependency.
+These checks do not manage release order or prove that changes are compatible.
 
 <!-- LINT.IfChange(remote_revision_refs) -->
 
@@ -161,30 +188,28 @@ See [remote provider configuration](docs/cli.md#remote-references) for ordinary 
 
 ## Benchmarks and correctness
 
-Measured with an Apple M1 Max (arm64), macOS 26.1 and Go 1.26.8. The Rust comparison uses [ifttt-lint v0.11.2](https://github.com/simonepri/ifttt-lint/releases/tag/v0.11.2).
+Measured with an Apple M1 Max (arm64), macOS 26.1 and Go 1.26.8.
 
-Times are medians of 21 runs after 3 warmups, with warm filesystem caches. Native Git timings include Git operations and process startup. They exclude builds. Both tools passed independent checks for expected exit codes and finding counts in these fixtures.
+Times are medians of 21 runs after 3 warmups, with warm filesystem caches. Native Git timings include Git operations and process startup. They exclude builds. Expected exit codes and finding counts were checked before timing.
 
-| Workload | IFTTT Lint (Go) | ifttt-lint (Rust) | Result |
-| --- | ---: | ---: | --- |
-| 1 changed dependency pair, 10,000 unrelated files | 102.67 ms | 452.05 ms | **Go 4.40× faster** |
-| 1,000 pairs, matching edits | 229.74 ms | 313.12 ms | **Go 1.36× faster** |
-| 1,000 pairs, missing target edits | 118.17 ms | 181.38 ms | **Go 1.53× faster** |
-| 1,000 pairs, structural validation | 109.78 ms | 50.68 ms | Rust 2.17× faster |
+| Workload | Median time |
+| --- | ---: |
+| 1 changed dependency pair, 10,000 unrelated files | 102.67 ms |
+| 1,000 pairs, matching edits | 229.74 ms |
+| 1,000 pairs, missing target edits | 118.17 ms |
+| 1,000 pairs, structural validation | 109.78 ms |
 
-Real-repository scans use the same machine, **2 workers**, `--strict=false`, 21 runs and 3 warmups. These scans check directive structure. Directive-file scans select tracked files that contain `LINT.` and exclude discovery time. Chromium uses upstream's smoke exclusions: `depot/*`, `<INTERNAL>/*` and `<ROOT_DIR>/*`.
+Real-repository scans use the same machine, **2 workers**, `--strict=false`, 21 runs and 3 warmups. These scans check directive structure. Directive-file scans select tracked files that contain `LINT.` and exclude discovery time. Chromium excludes `depot/*`, `<INTERNAL>/*` and `<ROOT_DIR>/*`.
 
-| Repository / workload | IFTTT Lint (Go) median | ifttt-lint (Rust) median | Findings Go / Rust |
-| --- | ---: | ---: | ---: |
-| [Chromium](https://github.com/chromium/chromium/commit/f7a8030b4c5ad01f8bad7e1e392709a3fbf121dd): 2,416 directive files | 1,020.34 ms | 1,857.58 ms | 480 / 518 |
-| [TensorFlow](https://github.com/tensorflow/tensorflow/commit/031dd1d53ac37fbb438eda763678c03c985db8cd): 251 directive files | 107.25 ms | 352.80 ms | 91 / 117 |
-| TensorFlow: all 37,098 tracked files | 1,835.44 ms | 1,339.66 ms | 91 / 117 |
+| Repository / workload | Median time | Findings |
+| --- | ---: | ---: |
+| [Chromium](https://github.com/chromium/chromium/commit/f7a8030b4c5ad01f8bad7e1e392709a3fbf121dd): 2,416 directive files | 1,020.34 ms | 480 |
+| [TensorFlow](https://github.com/tensorflow/tensorflow/commit/031dd1d53ac37fbb438eda763678c03c985db8cd): 251 directive files | 107.25 ms | 91 |
+| TensorFlow: all 37,098 tracked files | 1,835.44 ms | 91 |
 
-The real-repository scans report different findings, so their times do not prove a speedup for equivalent checks. Rust is faster on TensorFlow's full scan.
+Results depend on hardware and workload. Finding counts do not measure accuracy.
 
-**Correctness:** Isolated fixtures show support for nested blocks and inline/block-comment directives that Rust v0.11.2 rejects. The tool reports ambiguous labels and empty directives that have no effect. [Cross-repository checks](#cross-repository-change-sets) use exact committed snapshots. Dirty files cannot satisfy dependencies. Regression tests cover the audited upstream closed-issue cases.
-
-The pinned TensorFlow audit produced **91 Go findings and 117 Rust findings, with 82 matching**. Path and parsing policies explain the differences. These include 26 Rust traversal errors for paths that stay inside the repository. Finding counts do not measure accuracy. Results depend on hardware and workload.
+**Correctness:** Tests cover nested blocks and inline/block-comment directives. The tool reports ambiguous labels and empty directives that have no effect. [Cross-repository checks](#cross-repository-change-sets) use exact committed snapshots. Dirty files cannot satisfy dependencies.
 
 See [benchmark reproduction](docs/benchmarks.md) for commands, pinned inputs and report handling.
 
