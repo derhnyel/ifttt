@@ -1,5 +1,9 @@
 # IFTTT Lint
 
+[![CI tests](https://github.com/derhnyel/ifttt/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/derhnyel/ifttt/actions/workflows/test.yml)
+[![Latest release](https://img.shields.io/github/v/release/derhnyel/ifttt)](https://github.com/derhnyel/ifttt/releases/latest)
+[![MIT license](https://img.shields.io/github/license/derhnyel/ifttt)](LICENSE)
+
 IFTTT Lint catches incomplete changes.
 
 A change is often larger than the file you edit.
