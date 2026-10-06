@@ -81,6 +81,96 @@ func exampleChangeSetManifest(t *testing.T, backend string, a, b repo, aBase, aH
 	})
 }
 
+// LINT.IfChange(readme_unlabelled)
+func TestDocumentedUnlabelledLinks(t *testing.T) {
+	for _, backend := range []string{"git", "jj"} {
+		for _, opening := range []string{"LINT.IfChange", "LINT.IfChange()"} {
+			t.Run(backend+"/"+opening, func(t *testing.T) {
+				r := newExampleRepo(t, backend)
+				source := strings.Replace(documentedExample(t, "unlabelled-api"), "LINT.IfChange", opening, 1)
+				r.write(t, "api.go", source)
+				r.write(t, "guide.md", "API version: 2\n")
+				commitExample(t, r, backend)
+				r.write(t, "api.go", strings.Replace(source, "apiVersion = 2", "apiVersion = 3", 1))
+				out := requireCode(t, r, "", 1, "--vcs", backend, "--format=json")
+				if !strings.Contains(out, "then_missing") || !strings.Contains(out, "guide.md") {
+					t.Fatalf("unlabelled source must require a guide edit: %s", out)
+				}
+				r.write(t, "guide.md", "API version: 3\n")
+				requireCode(t, r, "", 0, "--vcs", backend)
+			})
+		}
+	}
+}
+
+// LINT.ThenChange(//docs/directives.md:readme_unlabelled)
+
+// LINT.IfChange(change_triggers)
+func TestDocumentedChangeTriggers(t *testing.T) {
+	for _, backend := range []string{"git", "jj"} {
+		t.Run(backend, func(t *testing.T) {
+			source := documentedExample(t, "behavior-source")
+			target := documentedExample(t, "behavior-target")
+			changed := strings.Replace(source, "retryBudget = 3", "retryBudget = 5", 1)
+			commentEdit := strings.Replace(source, "const retryBudget", "// Review retry failures.\nconst retryBudget", 1)
+			for _, tc := range []struct {
+				name, baseline, source, target, rule string
+				args                                 []string
+				code                                 int
+			}{
+				{name: "unchanged", source: source, target: target},
+				{name: "body edit", source: changed, target: target, code: 1, rule: "then_label_missing"},
+				{name: "body removal", source: strings.Replace(source, "const retryBudget = 3\n", "", 1), target: target, code: 1, rule: "then_label_missing"},
+				{name: "outside block", source: source + "// Service log policy.\n", target: target},
+				{name: "target list only", source: strings.Replace(source, "//ops.md:RETRIES", "//ops.md:RETRIES, //backup.md:RETRIES", 1), target: target},
+				{name: "body and new target", source: strings.Replace(changed, "//ops.md:RETRIES", "//ops.md:RETRIES, //backup.md:RETRIES", 1), target: strings.Replace(target, "3 retries", "5 retries", 1), code: 1, rule: "then_label_missing"},
+				{name: "label rename only", source: strings.Replace(source, "IfChange(RETRIES)", "IfChange(RENAMED)", 1), target: target},
+				{name: "label rename and body", source: strings.Replace(changed, "IfChange(RETRIES)", "IfChange(RENAMED)", 1), target: target, code: 1, rule: "then_label_missing"},
+				{name: "new block initial body", baseline: "const retryBudget = 3\n", source: changed, target: target},
+				{name: "target edit outside label", source: changed, target: strings.Replace(target, "service log", "audit log", 1), code: 1, rule: "then_label_missing"},
+				{name: "paired edits", source: changed, target: strings.Replace(target, "3 retries", "5 retries", 1)},
+				{name: "target-only edit", source: source, target: strings.Replace(target, "3 retries", "5 retries", 1)},
+				{name: "comment body edit", source: commentEdit, target: target, code: 1, rule: "then_label_missing"},
+				{name: "code-only comment edit", source: commentEdit, target: target, args: []string{"--code-only"}},
+				{name: "scan changed body", source: changed, target: target, args: []string{"--scan", "."}},
+				{name: "stale target label", source: source, target: strings.Replace(target, "IfChange(RETRIES)", "IfChange(RENAMED)", 1), code: 1, rule: "label_missing"},
+				{name: "invalid metadata-only target", source: strings.Replace(source, "//ops.md:RETRIES", "//missing.md:RETRIES", 1), target: target, code: 1},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					r := newExampleRepo(t, backend)
+					baseline := tc.baseline
+					if baseline == "" {
+						baseline = source
+					}
+					r.write(t, "retry.go", baseline)
+					r.write(t, "ops.md", target)
+					r.write(t, "backup.md", target)
+					commitExample(t, r, backend)
+					r.write(t, "retry.go", tc.source)
+					r.write(t, "ops.md", tc.target)
+					args := append([]string{"--vcs", backend, "--format=json"}, tc.args...)
+					out := requireCode(t, r, "", tc.code, args...)
+					if tc.rule != "" {
+						var report struct{ Errors []struct{ RuleID string } }
+						if err := json.Unmarshal([]byte(out), &report); err != nil {
+							t.Fatal(err)
+						}
+						found := false
+						for _, finding := range report.Errors {
+							found = found || finding.RuleID == tc.rule
+						}
+						if !found {
+							t.Fatalf("expected %s: %s", tc.rule, out)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+// LINT.ThenChange(//docs/directives.md:change_triggers)
+
 // LINT.IfChange(readme_nested)
 func TestDocumentedNestedLinks(t *testing.T) {
 	for _, backend := range []string{"git", "jj"} {
@@ -270,7 +360,24 @@ func TestDocumentedConfiguration(t *testing.T) {
 func TestDocumentedCrossRepositoryCombination(t *testing.T) {
 	for _, backend := range []string{"git", "jj"} {
 		t.Run(backend, func(t *testing.T) {
-			a, b := newExampleRepo(t, backend), newExampleRepo(t, backend)
+			if backend == "jj" {
+				if _, err := exec.LookPath("jj"); err != nil {
+					t.Skip("jj unavailable")
+				}
+			}
+			// Use the documented sibling layout and run from outside both repositories.
+			workspace := t.TempDir()
+			a, b := newDefaultRepo(t), newDefaultRepo(t)
+			for name, r := range map[string]*repo{"api": &a, "contracts": &b} {
+				dir := filepath.Join(workspace, name)
+				if err := os.Rename(r.dir, dir); err != nil {
+					t.Fatal(err)
+				}
+				r.dir = dir
+				if backend == "jj" {
+					r.jj(t, "git", "init", "--colocate")
+				}
+			}
 			source := writeDocumentedExample(t, a, "source.go", "crossrepo-api")
 			target := writeDocumentedExample(t, b, "contract.go", "crossrepo-contract")
 			writeDocumentedExample(t, b, ".ifttt-lint.yaml", "crossrepo-config")
@@ -278,14 +385,13 @@ func TestDocumentedCrossRepositoryCombination(t *testing.T) {
 			manifest := strings.ReplaceAll(documentedExample(t, "crossrepo-manifest"), "vcs: git", "vcs: "+backend)
 			run := func(aHead, bHead string, code int) string {
 				t.Helper()
-				body := strings.NewReplacer("./api", filepath.ToSlash(a.dir), "./contracts", filepath.ToSlash(b.dir),
-					"<api-base-commit>", aBase, "<api-head-commit>", aHead,
+				body := strings.NewReplacer("<api-base-commit>", aBase, "<api-head-commit>", aHead,
 					"<contracts-base-commit>", bBase, "<contracts-head-commit>", bHead).Replace(manifest)
-				path := filepath.Join(t.TempDir(), ".ifttt-changes.yaml")
+				path := filepath.Join(workspace, ".ifttt-changes.yaml")
 				if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 					t.Fatal(err)
 				}
-				return requireCode(t, a, "", code, "--change-set", path, "--format=json")
+				return requireCode(t, repo{dir: workspace, env: a.env}, "", code, "--change-set", ".ifttt-changes.yaml", "--format=json")
 			}
 			run(aBase, bBase, 0)
 			a.write(t, "source.go", strings.Replace(source, "apiVersion = 2", "apiVersion = 3", 1))

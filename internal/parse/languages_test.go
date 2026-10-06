@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// LINT.IfChange(language_comments)
 func TestLanguageGrammarCoverage(t *testing.T) {
 	for _, tc := range []struct{ files, comment string }{
 		{"a.c a.h a.cpp a.cc a.cxx a.hpp a.hxx a.hh a.cs a.dart a.go a.groovy a.gradle a.java a.js a.jsx a.mjs a.cjs a.kt a.kts a.m a.mm a.php a.phtml a.proto a.rs a.scala a.sc a.scss a.swift a.ts a.tsx a.mts a.cts", "// SENTRY.IfChange(\"real\")"},
@@ -18,17 +19,35 @@ func TestLanguageGrammarCoverage(t *testing.T) {
 		{"a.tpl a.gotmpl a.gohtml a.tmpl", "{{/* SENTRY.IfChange(\"real\") */}}"},
 		{"a.hs", "{- SENTRY.IfChange(\"real\") -}"},
 		{"a.ps1", "<# SENTRY.IfChange(\"real\") #>"},
+		{"a.vue a.svelte a.tf a.hcl a.tfvars unknown.custom", "// SENTRY.IfChange(\"real\")"},
+		{"a.php a.phtml unknown.custom", "# SENTRY.IfChange(\"real\")"},
+		{"a.vue a.svelte a.php a.phtml a.hcl a.tfvars unknown.custom", "/* SENTRY.IfChange(\"real\") */"},
+		{"a.lua", "--[=[\nSENTRY.IfChange(\"real\")\n]=]"},
+		{"CMakeLists.txt", "#[[\nSENTRY.IfChange(\"real\")\n]]"},
+		{"a.go", "/*\n * SENTRY.IfChange(\"real\")\n */"},
 	} {
 		for _, file := range strings.Fields(tc.files) {
-			t.Run(file+tc.comment[:1], func(t *testing.T) {
-				ds, e := (Provider{ReadFile: func(string) ([]byte, error) { return []byte(tc.comment), nil }}).Parse(file)
-				if e != nil || len(ds) != 1 || ds[0].Kind != ifttt.IfChange || ds[0].Label != "real" {
-					t.Fatalf("got %+v, %v", ds, e)
-				}
-			})
+			for _, prefix := range []string{"LINT", "SENTRY"} {
+				t.Run(prefix+"/"+file+tc.comment[:1], func(t *testing.T) {
+					src := tc.comment
+					if prefix == "LINT" {
+						src = strings.ReplaceAll(src, "SENTRY.IfChange(\"real\")", "LINT.IfChange(real)")
+					}
+					ds, e := (Provider{
+						Settings: &Settings{Syntax: ifttt.NewDirectiveSyntax(prefix)},
+						ReadFile: func(string) ([]byte, error) { return []byte(src), nil },
+					}).Parse(file)
+					if e != nil || len(ds) != 1 || ds[0].Kind != ifttt.IfChange || ds[0].Label != "real" {
+						t.Fatalf("got %+v, %v", ds, e)
+					}
+				})
+			}
 		}
 	}
 }
+
+// LINT.ThenChange(//docs/cli.md:language_comments)
+
 func TestLanguageSkipRegions(t *testing.T) {
 	for _, tc := range []struct{ file, src string }{
 		{"script.sh", "cat <<'EOF'\n# SENTRY.IfChange(\"fake\")\nEOF\n# SENTRY.IfChange(\"real\")"},
