@@ -16,6 +16,14 @@ For editor changes, run `make extension-host` to exercise an actual VS Code host
 
 Optional checks are `make coverage` and the workloads in [benchmarks](README.md#benchmarks-and-correctness). For local VSIX packaging, run `npm ci` and `npm run package:local` in `vscode-extension`.
 
+## Add a language
+
+Start with the [language registry](internal/comments/languages.go). Reuse an existing comment grammar when possible.
+Add a string-skip rule if the language has literals that can contain comment markers.
+Test real comments and lookalike directives inside strings in [parser language tests](internal/parse/languages_test.go).
+Update the [supported-file guide](docs/cli.md#supported-files).
+For a simple custom line prefix, users can use `--comment-style` without a code change.
+
 ## Pull requests
 
 - Keep each change focused and explain the problem, resulting behavior and verification performed.

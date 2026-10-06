@@ -22,6 +22,15 @@ API version: v2
 
 Declare both checkout roots in `.ifttt-changes.yaml`. This manifest selects revisions. It does not replace `.ifttt-lint.yaml`.
 The filename is your choice. The tool reads it only when you pass `--change-set`.
+
+The manifest tells the tool which local repositories and commits to compare. It does not download repositories or synchronize their files.
+The manifest is optional:
+
+- Without `--change-set`, normal checks work without this file. They do not verify coordinated edits across repositories.
+- With `--change-set`, the tool must read the file you specify. A missing or invalid manifest stops the check with exit code `2`.
+
+The tool does not create a missing manifest or fall back to normal checks.
+
 Git and jj can participate in the same manifest:
 
 ```yaml
@@ -45,7 +54,7 @@ ifttt --change-set .ifttt-changes.yaml --format=json
 
 | Manifest field | Meaning |
 | --- | --- |
-| `version` | Use `1`. |
+| `version` | Manifest format version. Use `1`. This is not your application version. |
 | `repositories[].repo` | An `owner/name` ID that matches your `github://` targets. These IDs do not need a GitHub account or remote. |
 | `repositories[].path` | Checkout root, relative to the manifest file or absolute. |
 | `repositories[].vcs` | `git`, `jj`, or `auto` (default). |
@@ -56,8 +65,11 @@ ifttt --change-set .ifttt-changes.yaml --format=json
 <summary>Complete example: two repositories, different prefixes, linked edits and matching values</summary>
 
 <!-- LINT.IfChange(readme_crossrepo) -->
-Create sibling repositories named `api` and `contracts`. Use Git for both in this example.
-The IDs `acme/api` and `acme/contracts` identify these local checkouts. The checker makes no network request.
+1. Put the `api` and `contracts` Git checkouts in the same parent directory.
+2. Create the three files below in their indicated checkouts.
+
+The IDs `acme/api` and `acme/contracts` identify these local checkouts. They do not need to exist on GitHub.
+The checker makes no network request in change-set mode.
 
 **api/source.go**
 
@@ -88,10 +100,38 @@ const contractVersion = 2
 // SPEC.RequireAll(["github://acme/api/source.go#API"])
 ```
 
-The API block requires a contract section edit. The contract file requires an API section edit when it changes.
-Match also requires the two version numbers to be equal. Each repository uses its own committed prefix and exclusions.
+These comments apply three checks:
 
-Commit these files in both repositories. Create **.ifttt-changes.yaml** beside the checkout directories:
+- Changing `apiVersion` requires an edit inside the contract's `API` section.
+- Changing any part of `contract.go` requires an edit inside the source's `API` section.
+- `Match` extracts the numbers from both sections and requires them to be equal, even when neither section changes.
+
+The API repository uses the default `LINT` prefix.
+The contracts repository uses `SPEC` and excludes `generated/**`, as defined in its committed `.ifttt-lint.yaml`.
+
+3. Run these commands from the parent directory. They commit the example files and print each baseline commit ID.
+
+```sh
+git -C api add source.go
+git -C api commit -m "Add API version checks"
+git -C contracts add .ifttt-lint.yaml contract.go
+git -C contracts commit -m "Add contract version checks"
+git -C api rev-parse HEAD
+git -C contracts rev-parse HEAD
+```
+
+4. Record the two commit IDs as the base IDs.
+5. Create `.ifttt-changes.yaml` in the parent directory:
+
+```text
+workspace/
+  .ifttt-changes.yaml
+  api/
+    source.go
+  contracts/
+    .ifttt-lint.yaml
+    contract.go
+```
 
 <!-- example: crossrepo-manifest -->
 ```yaml
@@ -109,14 +149,31 @@ repositories:
     head: '<contracts-head-commit>'
 ```
 
-Replace each placeholder with a commit ID. Read the current ID with `git -C api rev-parse HEAD` or `git -C contracts rev-parse HEAD`.
-For the first check, use each repository's baseline ID for both its base and head.
+6. Replace the placeholders using this table. Do not keep the `<` and `>` characters.
+
+| Placeholder | Value |
+| --- | --- |
+| `<api-base-commit>` | The API baseline commit ID. |
+| `<api-head-commit>` | The API commit ID to check. Use its baseline ID for the first run. |
+| `<contracts-base-commit>` | The contracts baseline commit ID. |
+| `<contracts-head-commit>` | The contracts commit ID to check. Use its baseline ID for the first run. |
+
+`base` means before the changes. `head` means after the changes.
+Each repository has its own commit IDs. The paths are relative to the manifest file.
+
+7. Run the check from the parent directory:
 
 ```sh
 ifttt --change-set .ifttt-changes.yaml --format=json
 ```
 
-Try these cases. Keep the base IDs fixed and update the head IDs after each commit.
+The first run passes because both version numbers are `2` and neither repository changed.
+For subsequent checks, keep both base IDs fixed.
+Commit your edits in each changed repository, then run its `rev-parse HEAD` command again.
+Update only that repository's `head` in the manifest and run the check again.
+Saving a file without committing it does not affect the result.
+
+Try these cases:
 
 | Changes | Result |
 | --- | --- |

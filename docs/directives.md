@@ -4,6 +4,9 @@
 
 ## Directive syntax
 
+The comment names follow the convention described in [Chromium's developer guide](https://www.chromium.org/chromium-os/developer-library/guides/development/keep-files-in-sync/).
+IFTTT Lint is an independent implementation. This guide defines its parsing rules and additional directives.
+
 Put directives in the source language's comments:
 
 ```go
@@ -12,7 +15,22 @@ const apiVersion = 2
 // LINT.ThenChange(//docs/api.md:API, //client/version.go)
 ```
 
-A target section can use `LINT.IfChange(API)` and an empty `LINT.ThenChange()`. The empty closing directive requires a label on the opening directive. Bare `LINT.IfChange` or `LINT.IfChange()` starts a source block without a label.
+A target section can use `LINT.IfChange(API)` and an empty `LINT.ThenChange()`. The empty closing directive requires a label on the opening directive.
+
+<!-- LINT.IfChange(readme_unlabelled) -->
+You can omit the label when no other directive needs to reference this section:
+
+<!-- example: unlabelled-api -->
+```go
+// LINT.IfChange
+const apiVersion = 2
+// LINT.ThenChange(//guide.md)
+```
+
+An edit to `apiVersion` requires an edit to `guide.md`. The target selects the whole file.
+`LINT.IfChange()` also works. An unlabelled block must have at least one target in `LINT.ThenChange(...)`.
+Use `LINT.IfChange(API)` when another directive needs to select this section by name.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:readme_unlabelled) -->
 
 Write labels and targets without quotes. Separate multiple targets with commas. Target lists can span lines. IFTTT Lint ignores directive text in strings, prose and fenced examples.
 
@@ -58,6 +76,81 @@ Suppression uses finding rule IDs, not directive names. Use `"all"` or `"*"` to 
 Run `ifttt explain then_missing` for help with a finding. `--list-suppressed` shows suppressed findings. Prefer fixing a dependency over suppressing it.
 
 For native revision ranges, `NO_IFTTT=<reason>` in any commit message suppresses required-edit checks for the whole range. The empty marker `NO_IFTTT=` also suppresses them. Directive structure and stale-reference checks still run. Change-set mode does not use commit-message suppression.
+
+## How changes trigger checks
+
+<!-- LINT.IfChange(change_triggers) -->
+Required-edit checks compare changes in one selected diff or revision range.
+For an existing IfChange block, an edit to its body requires edits to the targets in its current ThenChange list.
+The body is the content between the opening and closing directive lines.
+
+| Edit in the selected changes | Required-edit result |
+| --- | --- |
+| Change, add or remove a body line. | Each listed target needs an edit. |
+| Edit the source outside the block. | That block does not require target edits. |
+| Edit only the block's opening or closing directive. | No target edit is required. The updated directive must still be valid. |
+| Add a target and edit the existing block's body. | All current targets need edits, including the added target. |
+| Add a new IfChange/ThenChange pair, including its initial body. | Establishes the dependency without requiring an initial target edit. Targets must exist in the checked content. |
+| Rename an existing block's label and edit its body. | The existing dependency still applies. Renaming does not make it a new block. |
+| Edit only comments or whitespace inside the body. | Requires target edits by default. `--code-only` skips edits it recognizes as comments or whitespace only. |
+| Edit an inner block. | Its enclosing block also contains the edit. Both blocks' targets apply. |
+| Edit only the target. | The source does not need an edit unless the target declares a link back. |
+
+Whole-file targets accept an edit anywhere in that file. Labelled targets require an edit in the selected range.
+Editing a different section of the target file does not satisfy a labelled link.
+An edit satisfies the dependency check even if its content is wrong. Tests and review must check the update itself.
+
+**Example: an existing retry policy**
+
+Create these files and commit them as the baseline.
+
+**retry.go**
+
+<!-- example: behavior-source -->
+```go
+// LINT.IfChange(RETRIES)
+const retryBudget = 3
+// LINT.ThenChange(//ops.md:RETRIES)
+```
+
+**ops.md**
+
+<!-- example: behavior-target -->
+```markdown
+<!-- LINT.IfChange(RETRIES) -->
+Allow up to 3 retries.
+<!-- LINT.ThenChange() -->
+
+Record failures in the service log.
+```
+
+Changing `retryBudget` to `5` produces `then_label_missing` until the `RETRIES` section in `ops.md` also changes.
+Editing only the service-log sentence does not satisfy that link.
+Adding a second target without changing the budget checks that target's existence, but does not require an edit to it.
+
+**Checks that do not depend on a body edit**
+
+Malformed directives, missing targets, missing or ambiguous labels, and unmatched block markers can produce findings without a required-edit trigger.
+Removing or renaming a target file or label can expose stale links in unchanged sources.
+`--scan` validates structure without treating every block as changed. Explicit source-file checks without `--diff` also validate structure.
+`Match` also compares the selected sections when the diff is empty.
+
+**Other directive triggers**
+
+| Directive | When it checks |
+| --- | --- |
+| `Label` / `EndLabel` | Define a target range. They do not require outgoing edits. |
+| `Match` | Compares the selected sections whenever its source is included in a check. No source edit is required. |
+| `RequireAny` / `RequireAll` / `ForbidChange` inside an IfChange block | Use the enclosing block's body trigger. A new block does not trigger initial edit requirements. |
+| `RequireAny` / `RequireAll` / `ForbidChange` outside a block | Use edits anywhere in the source file. |
+| `Disable` / `Enable` / `Ignore` | Suppress findings within their documented scopes. They do not create dependencies. |
+
+File selections and configured exclusions limit normal source checks. Incoming stale-link searches still cover the repository.
+Git ignores do not hide explicitly linked targets.
+`NO_IFTTT` in a native revision range suppresses required-edit checks, while structure, stale-link and Match checks still run.
+Directive suppression applies to the named finding rules.
+Cross-repository checks use committed base/head snapshots. Dirty files cannot supply an edit, and commit-message suppression does not apply.
+<!-- LINT.ThenChange(//test/integration/readme_examples_test.go:change_triggers) -->
 
 <!-- LINT.IfChange(match_contract) -->
 

@@ -71,7 +71,7 @@ Common options:
 - `--comment-style .tmpl=##`: set a custom comment prefix. Repeat this option for several extensions.
 - `--combined strict|warn|ignore|parent`: handle combined merge diffs. `parent` tries to use the first parent as change evidence.
 - `--verbose`, `--log-level debug|info|warn|error`, `--stats`: inspect logging and run statistics.
-- `--parallel N` (aliases `--threads`, `-p`, `-t`): set the number of workers. Automatic selection uses two workers.
+- `--parallel N` (aliases `--threads`, `-p`, `-t`): set the number of workers. Use `--threads 0` for automatic selection, which uses two workers.
 
 Lint, scan and change-set commands use these exit codes:
 
@@ -106,26 +106,67 @@ The report shows findings from before the edits. Run lint again afterward. **Rep
 
 </details>
 
+## What a check reads
+
+A diff selects the source files to check. Their directives identify the target files and sections to read.
+Some rules also need sources outside the diff: unchanged Match rules, and references to targets that were removed or renamed.
+Git selects these candidates with fixed-string searches for directive text. Only the candidates and their targets need parsing.
+
+Source discovery follows the [ignore policy](#commands). Explicit links still check Git-ignored targets.
+Scans cover the selected workspace rather than a diff. Larger diffs, more links and slower storage can increase runtime.
+Choose a worker count for your workload. More workers do not always make a check faster.
+See [measured workloads](../README.md#benchmarks-and-correctness).
+
 ## Supported files
 
-Links can connect different languages and directories in one repository. IFTTT Lint reads comments in these languages and their common file extensions:
+<!-- LINT.IfChange(language_comments) -->
+Links can connect different languages and directories. Comment syntax comes from the file extension or a known filename, such as `Dockerfile`.
+The [language registry](../internal/comments/languages.go) lists all built-in extensions, filename rules and string formats to skip.
 
 | Files | Directive comments |
 | --- | --- |
-| C/C++, C#, Go, Java, JavaScript/TypeScript, Rust, Kotlin, Swift, Scala, Dart, Groovy, Objective-C, PHP, Protocol Buffers, SCSS | `//` and `/* ... */` |
-| Python, Shell, Ruby, Perl, R, YAML, TOML, GraphQL, Elixir, Nix, PowerShell, CMake, Make, Docker, GN, Bazel | `#` and supported block comments |
+| C/C++, C#, Go, Java, JavaScript/TypeScript, Rust, Kotlin, Swift, Scala, Dart, Groovy, Protocol Buffers, SCSS | `//` and `/* ... */` |
+| Objective-C / MATLAB (`.m`, `.mm`) | `//`, `%`, `/* ... */` |
+| PHP (`.php`, `.phtml`) | `//`, `#`, `/* ... */` |
+| Python, Shell, Ruby, Perl, R, YAML, TOML, GraphQL, Elixir, Make, Docker, GN, Bazel / Starlark | `#` |
+| Nix | `#`, `/* ... */` |
+| CMake | `#`, bracket comments such as `#[[ ... ]]` |
+| PowerShell | `#`, `<# ... #>` |
 | Terraform / HCL | `#`, `//`, `/* ... */` |
 | Clojure, Lisp, Scheme, Racket | `;` |
-| SQL, Lua, Haskell | `--` and supported block comments |
+| SQL | `--`, `/* ... */` |
+| Lua | `--`, long comments such as `--[[ ... ]]` |
+| Haskell | `--`, `{- ... -}` |
 | TeX / LaTeX | `%` |
 | CSS | `/* ... */` |
 | HTML, XML, SVG, Markdown / MDX | `<!-- ... -->` |
-| Vue, Svelte | HTML and JavaScript comments |
-| Go templates | `{{/* ... */}}` |
+| Vue, Svelte | `//`, `/* ... */`, `<!-- ... -->` |
+| Go templates / Helm | `{{/* ... */}}` |
+| Unknown extensions | `//`, `#`, `/* ... */` |
 
-IFTTT Lint reads Python docstring directives by default. Set `languages.python_docstrings: false` to disable them. Use `--comment-style .ext=PREFIX` to add a line-comment format.
+Both `%` and `//` work in `.m` files because MATLAB and Objective-C share this extension.
+Known filenames include `CMakeLists.txt`, `Dockerfile`, `Dockerfile.*`, `Makefile`, `GNUmakefile`, `Rakefile`, `Gemfile`, `BUILD`, `BUILD.bazel` and `WORKSPACE`.
 
-IFTTT Lint supports nested IfChange blocks and directives in inline and block comments. It ignores strings and Markdown fenced examples.
+IFTTT Lint supports inline comments, single-line block comments and multiline block comments.
+Put each directive on its own comment-content line. You can use a leading `*` inside a block comment:
+
+```go
+/*
+ * LINT.IfChange(API)
+ */
+const apiVersion = 2
+/*
+ * LINT.ThenChange(//guide.md)
+ */
+```
+
+The parser skips recognized strings, raw strings, heredocs and Markdown fenced examples.
+It can read directives inside multiline comments. Do not leave active directive lines in commented-out examples.
+
+IFTTT Lint reads Python docstring directives by default. Set `languages.python_docstrings: false` to disable them.
+Assigned triple-quoted Python strings remain strings and do not create directives.
+Use `--comment-style .ext=PREFIX` to add or override a line-comment format for an extension.
+<!-- LINT.ThenChange(//internal/parse/languages_test.go:language_comments) -->
 
 ## Configuration
 
