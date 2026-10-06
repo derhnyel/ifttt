@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Clarify when linked-edit checks run, unlabelled blocks, supported comment styles and cross-repository manifest setup. Test the documented trigger cases and checkout layout with Git and jj.
+- Simplify the README, explain how to resolve findings and show project benchmark results without tool comparisons.
+
 ## 0.2.1 — 2026-10-06
 
 - Parse remote comments using the target file path when a GitHub reference selects a branch, tag or commit.

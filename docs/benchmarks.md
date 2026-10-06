@@ -1,6 +1,6 @@
 # Reproduce the benchmarks
 
-See the [measured results and correctness comparison](../README.md#benchmarks-and-correctness).
+See the [measured results and correctness checks](../README.md#benchmarks-and-correctness).
 
 Run these commands from the repository root. The scripts check findings before timing. Each JSON report records binary hashes, commands and samples. Different findings do not establish equivalent checking performance.
 
