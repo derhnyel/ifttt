@@ -83,6 +83,7 @@ For native revision ranges, `NO_IFTTT=<reason>` in any commit message suppresses
 Required-edit checks compare changes in one selected diff or revision range.
 For an existing IfChange block, an edit to its body requires edits to the targets in its current ThenChange list.
 The body is the content between the opening and closing directive lines.
+These trigger rules apply to files with either LF or CRLF line endings.
 
 | Edit in the selected changes | Required-edit result |
 | --- | --- |

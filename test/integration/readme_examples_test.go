@@ -111,6 +111,11 @@ func TestDocumentedChangeTriggers(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			source := documentedExample(t, "behavior-source")
 			target := documentedExample(t, "behavior-target")
+			crlfSource := strings.ReplaceAll(strings.ReplaceAll(source, "\r\n", "\n"), "\n", "\r\n")
+			removeBody := strings.NewReplacer("const retryBudget = 3\r\n", "", "const retryBudget = 3\n", "")
+			if removeBody.Replace(source) == source || removeBody.Replace(crlfSource) == crlfSource {
+				t.Fatal("body-removal fixture must remove a line with either line ending")
+			}
 			changed := strings.Replace(source, "retryBudget = 3", "retryBudget = 5", 1)
 			commentEdit := strings.Replace(source, "const retryBudget", "// Review retry failures.\nconst retryBudget", 1)
 			for _, tc := range []struct {
@@ -120,7 +125,8 @@ func TestDocumentedChangeTriggers(t *testing.T) {
 			}{
 				{name: "unchanged", source: source, target: target},
 				{name: "body edit", source: changed, target: target, code: 1, rule: "then_label_missing"},
-				{name: "body removal", source: strings.Replace(source, "const retryBudget = 3\n", "", 1), target: target, code: 1, rule: "then_label_missing"},
+				{name: "body removal", source: removeBody.Replace(source), target: target, code: 1, rule: "then_label_missing"},
+				{name: "CRLF body removal", baseline: crlfSource, source: removeBody.Replace(crlfSource), target: target, code: 1, rule: "then_label_missing"},
 				{name: "outside block", source: source + "// Service log policy.\n", target: target},
 				{name: "target list only", source: strings.Replace(source, "//ops.md:RETRIES", "//ops.md:RETRIES, //backup.md:RETRIES", 1), target: target},
 				{name: "body and new target", source: strings.Replace(changed, "//ops.md:RETRIES", "//ops.md:RETRIES, //backup.md:RETRIES", 1), target: strings.Replace(target, "3 retries", "5 retries", 1), code: 1, rule: "then_label_missing"},
