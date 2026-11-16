@@ -7,7 +7,7 @@ toolchain go1.26.8
 require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-github/v60 v60.0.0
-	github.com/sourcegraph/go-diff v0.9.0
+	github.com/sourcegraph/go-diff v0.10.0
 	golang.org/x/oauth2 v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
